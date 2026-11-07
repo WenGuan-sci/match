@@ -37,6 +37,7 @@
   color-scheme: dark;
 }
 html, body { height: 100%; }
+[hidden] { display: none !important; }
 body {
   background: radial-gradient(120% 80% at 50% 38%, var(--glow), var(--bg-2) 45%, var(--bg) 100%);
   background-color: var(--bg);
@@ -61,8 +62,6 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.4rem, 4.5vw, 1.9rem); margin: 0; letter-spacing: -0.01em; line-height: 1; }
 h1 span { color: var(--accent); }
 .sub { margin: 4px 0 0; color: var(--ink-soft); font-size: 0.85rem; font-weight: 700; }
-.vol { display: flex; align-items: center; gap: 8px; }
-.vol label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; color: var(--ink-soft); }
 input[type=range] { accent-color: var(--accent); width: 110px; }
 .stage { position: relative; min-height: 0; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
@@ -88,15 +87,55 @@ canvas.pressing { cursor: grabbing; }
 .meter { flex: 1; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; max-width: 220px; }
 .meter i { display: block; height: 100%; width: 100%; background: var(--accent); border-radius: 99px; transition: width .2s; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.picks {
+  display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x proximity;
+  padding-bottom: 4px; margin-bottom: -4px; scrollbar-width: thin;
+}
 .pick {
-  font: inherit; font-weight: 800; font-size: 0.82rem; color: var(--ink);
+  flex: 0 0 auto; min-width: 74px; scroll-snap-align: start;
+  font: inherit; font-weight: 800; font-size: 0.78rem; color: var(--ink);
   background: transparent; border: 1.5px solid var(--line); border-radius: 14px;
-  padding: 8px 6px; cursor: pointer; display: grid; justify-items: center; gap: 4px;
+  padding: 8px 8px; cursor: pointer; display: grid; justify-items: center; gap: 4px;
 }
 .pick .dot { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset -4px -5px 0 rgba(0,0,0,.12), inset 3px 3px 0 rgba(255,255,255,.5); }
+.pick .dot.cube { border-radius: 8px; }
+.pick .dot.star { clip-path: polygon(50% 0, 63% 33%, 98% 36%, 71% 58%, 80% 94%, 50% 75%, 20% 94%, 29% 58%, 2% 36%, 37% 33%); border-radius: 0; }
+.pick .dot.drop { border-radius: 50% 50% 50% 50% / 42% 42% 58% 58%; }
+.pick .dot.bun { width: 30px; height: 22px; margin-block: 2px; }
 .pick[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--line); border-radius: 14px; padding: 3px; gap: 3px; }
+.tool {
+  font: inherit; font-weight: 800; font-size: 0.85rem; color: var(--ink-soft); background: transparent;
+  border: 0; border-radius: 11px; padding: 8px 4px; cursor: pointer;
+}
+.tool[aria-pressed="true"] { background: var(--bg-2); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.gear {
+  font: inherit; font-weight: 800; font-size: 0.85rem; color: var(--ink); background: var(--tray);
+  border: 1.5px solid var(--line); border-radius: 999px; padding: 8px 14px; cursor: pointer;
+}
+.gear[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.panel {
+  position: absolute; right: 0; top: 0; z-index: 5; width: min(300px, 100%);
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 18px; padding: 14px;
+  display: grid; gap: 12px; box-shadow: 0 12px 32px rgba(40, 10, 25, .18);
+}
+.panel h2 { margin: 0; font-family: var(--font-display); font-size: 1.05rem; }
+.slider { display: grid; grid-template-columns: 70px 1fr 38px; align-items: center; gap: 8px; font-weight: 800; font-size: 0.82rem; }
+.slider input { width: 100%; }
+.slider output { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-soft); text-align: right; font-variant-numeric: tabular-nums; }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.85rem; }
+.check input { accent-color: var(--accent); width: 18px; height: 18px; }
+.lifetime { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink-soft); border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
+.lifetime b { color: var(--ink); font-weight: 500; }
+.keys { font-size: 0.75rem; color: var(--ink-soft); margin: 0; }
+.combo {
+  position: absolute; right: 4%; top: 10%; font-family: var(--font-display); font-weight: 800;
+  font-size: 1.6rem; color: var(--accent); pointer-events: none; opacity: 0; transition: opacity .3s;
+  font-variant-numeric: tabular-nums;
+}
+.combo.show { opacity: 1; }
+.combo small { display: block; font-family: var(--font-body); font-size: 0.7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
 .btn {
   font: inherit; font-weight: 800; font-size: 0.92rem; border-radius: 14px; padding: 11px 12px; cursor: pointer;
   border: 1.5px solid var(--line); background: transparent; color: var(--ink);
@@ -104,9 +143,10 @@ canvas.pressing { cursor: grabbing; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 420px) {
-  .pick { font-size: 0.72rem; }
-  input[type=range] { width: 84px; }
+@media (max-width: 460px) {
+  .actions { grid-template-columns: 1fr 1fr; }
+  .btn { padding: 9px 8px; font-size: 0.85rem; }
+  .sub { font-size: 0.78rem; }
 }
 </style>
 </head>
@@ -118,16 +158,28 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       <h1>Crackle <span>Squish</span></h1>
       <p class="sub">Press, hold &amp; drag to crack the sugar shell. Headphones on.</p>
     </div>
-    <div class="vol">
-      <label for="vol">Volume</label>
-      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8">
-    </div>
+    <button class="gear" id="gear" type="button" aria-expanded="false" aria-controls="panel">Sound</button>
   </header>
 
   <div class="stage" id="stage">
-    <canvas id="c" aria-label="Squishy toy. Press and drag to crack it."></canvas>
+    <canvas id="c" tabindex="0" aria-label="Squishy toy. Press and drag to crack it, or press Space."></canvas>
     <div class="hint" id="hint">Tap &amp; hold the squishy</div>
     <div class="toast" id="toast">Shell shattered!</div>
+    <div class="combo" id="combo"><small>combo</small><span id="comboN">x3</span></div>
+    <div class="panel" id="panel" hidden>
+      <h2>Sound mixer</h2>
+      <label class="slider" for="vol">Volume <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8"><output id="volO">80</output></label>
+      <label class="slider" for="mixCrunch">Crunch <input id="mixCrunch" type="range" min="0" max="1.5" step="0.01" value="1"><output id="mixCrunchO">100</output></label>
+      <label class="slider" for="mixSquish">Squish <input id="mixSquish" type="range" min="0" max="1.5" step="0.01" value="1"><output id="mixSquishO">100</output></label>
+      <label class="slider" for="mixRain">Rain <input id="mixRain" type="range" min="0" max="1" step="0.01" value="0.5"><output id="mixRainO">50</output></label>
+      <label class="check" for="vibe"><input id="vibe" type="checkbox" checked> Vibrate on cracks</label>
+      <div class="lifetime">
+        <span>All-time crunches <b id="lifeCrunch">0</b></span>
+        <span>Shells shattered <b id="lifeShatter">0</b></span>
+        <span>Best combo <b id="lifeCombo">0</b></span>
+      </div>
+      <p class="keys">Keyboard: Space crunches, 1–3 switch tools, R re-coats, S shuffles.</p>
+    </div>
   </div>
 
   <div class="tray">
@@ -136,9 +188,16 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       <div class="meter" aria-hidden="true"><i id="meter"></i></div>
       <span id="crunchTxt">0 crunches</span>
     </div>
-    <div class="picks" id="picks"></div>
+    <div class="tools" role="group" aria-label="Tool">
+      <button class="tool" type="button" data-tool="squeeze" aria-pressed="true">Squeeze</button>
+      <button class="tool" type="button" data-tool="poke" aria-pressed="false">Poke</button>
+      <button class="tool" type="button" data-tool="smash" aria-pressed="false">Smash</button>
+    </div>
+    <div class="picks" id="picks" role="group" aria-label="Squishy"></div>
     <div class="actions">
-      <button class="btn primary" id="recoat" type="button">Re-coat shell</button>
+      <button class="btn primary" id="recoat" type="button">Re-coat</button>
+      <button class="btn" id="shuffle" type="button">Shuffle</button>
+      <button class="btn" id="rain" type="button" aria-pressed="false">Rain</button>
       <button class="btn" id="auto" type="button" aria-pressed="false">Auto ASMR</button>
     </div>
   </div>
@@ -164,7 +223,37 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       name: "Honey", light: "#ffe7a6", base: "#ffc24d", dark: "#e08a12",
       shell: "#fff0c2", crackLight: "#fff9e6", crackDark: "#9b5a05", face: "#4d2c05", blush: "#ff8a5c",
       crack: { fLo: 700, fHi: 2700, q: 3, gap: 0.019, dur: 0.012, gain: 1.7, pop: 0.35, popF: 480, body: 220 },
-      squish: { f: 440, bubbles: 5 }
+      squish: { f: 440, bubbles: 5 }, shape: "cube"
+    },
+    strawberry: {
+      name: "Strawberry", light: "#ffc7cf", base: "#ff6b81", dark: "#d93a57",
+      shell: "#fff0f2", crackLight: "#fff7f8", crackDark: "#9c1f38", face: "#4f0f1d", blush: "#ffd1d9",
+      crack: { fLo: 1800, fHi: 6000, q: 1.8, gap: 0.012, dur: 0.007, gain: 1.6, pop: 0.2, popF: 1000, body: 320 },
+      squish: { f: 760, bubbles: 3 }, shape: "drop", pattern: "seeds"
+    },
+    lemon: {
+      name: "Lemon Star", light: "#fffbc2", base: "#ffe34d", dark: "#e6b800",
+      shell: "#fffde8", crackLight: "#ffffff", crackDark: "#a07a00", face: "#4a3a00", blush: "#ffa25c",
+      crack: { fLo: 2800, fHi: 8800, q: 2.5, gap: 0.009, dur: 0.005, gain: 1.7, pop: 0.18, popF: 1900, body: 450 },
+      squish: { f: 1000, bubbles: 2 }, shape: "star", pattern: "sprinkles"
+    },
+    grape: {
+      name: "Grape Gummy", light: "#e3c6ff", base: "#a35cf0", dark: "#6a23b8",
+      shell: "#f6ecff", crackLight: "#fbf6ff", crackDark: "#3f0f78", face: "#ffffff", blush: "#ff8fd8",
+      crack: { fLo: 600, fHi: 2300, q: 2.2, gap: 0.016, dur: 0.014, gain: 1.8, pop: 0.4, popF: 380, body: 170 },
+      squish: { f: 380, bubbles: 6 }
+    },
+    galaxy: {
+      name: "Galaxy", light: "#6f6ad8", base: "#2c2a7a", dark: "#120f3d",
+      shell: "#dfe4ff", crackLight: "#ffffff", crackDark: "#05031c", face: "#f4f2ff", blush: "#ff7ad9",
+      crack: { fLo: 2500, fHi: 11000, q: 6, gap: 0.013, dur: 0.005, gain: 1.6, pop: 0.25, popF: 3200, body: 200 },
+      squish: { f: 700, bubbles: 2 }, pattern: "stars"
+    },
+    matcha: {
+      name: "Matcha Mochi", light: "#e6f5c8", base: "#a9d17a", dark: "#6e9a40",
+      shell: "#f6fbe9", crackLight: "#fbfff2", crackDark: "#40621c", face: "#2c3b14", blush: "#ffa3a3",
+      crack: { fLo: 700, fHi: 3000, q: 0.7, gap: 0.008, dur: 0.012, gain: 1.4, pop: 0.06, popF: 500, body: 240 },
+      squish: { f: 520, bubbles: 1 }, shape: "bun", pattern: "dust"
     },
     mint: {
       name: "Mint Ice", light: "#dcfff4", base: "#93ecd2", dark: "#3fbf9b",
@@ -181,20 +270,28 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   const stage = $("stage"), hint = $("hint"), toast = $("toast");
   const shellTxt = $("shellTxt"), crunchTxt = $("crunchTxt"), meter = $("meter");
   const picks = $("picks"), volEl = $("vol"), autoBtn = $("auto");
+  const comboEl = $("combo"), comboN = $("comboN");
 
   for (const [key, p] of Object.entries(PROFILES)) {
     const b = document.createElement("button");
     b.type = "button"; b.className = "pick"; b.dataset.key = key;
     b.setAttribute("aria-pressed", key === "peach" ? "true" : "false");
-    b.innerHTML = `<span class="dot" style="background:${p.base}"></span>${p.name}`;
+    b.innerHTML = `<span class="dot ${p.shape || ""}" style="background:radial-gradient(circle at 35% 30%, ${p.light}, ${p.base} 60%, ${p.dark})"></span>${p.name}`;
     b.addEventListener("click", () => choose(key));
     picks.appendChild(b);
   }
 
+  // ---------- Saved settings + all-time stats (per browser, optional) ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("cs-" + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("cs-" + k, JSON.stringify(v)); } catch (e) {} }
+  };
+  const life = store.get("life", { crunch: 0, shatter: 0, combo: 0 });
+  const mix = Object.assign({ vol: 0.8, crunch: 1, squish: 1, rain: 0.5, vibe: true }, store.get("mix", {}));
+
   // ---------- Audio ----------
-  let ac = null, master = null, noise = null;
-  let volume = 0.8;
-  try { const v = parseFloat(localStorage.getItem("cs-vol")); if (!isNaN(v)) { volume = v; volEl.value = v; } } catch (e) {}
+  let ac = null, master = null, noise = null, crunchBus = null, squishBus = null, rainBus = null;
+  let volume = mix.vol;
 
   function initAudio() {
     if (ac) { if (ac.state === "suspended") ac.resume(); return; }
@@ -209,23 +306,83 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.0005; limiter.release.value = 0.05;
     master = ac.createGain(); master.gain.value = volume;
     master.connect(comp); comp.connect(makeup); makeup.connect(limiter); limiter.connect(ac.destination);
+    crunchBus = ac.createGain(); crunchBus.gain.value = mix.crunch; crunchBus.connect(master);
+    squishBus = ac.createGain(); squishBus.gain.value = mix.squish; squishBus.connect(master);
+    rainBus = ac.createGain(); rainBus.gain.value = 0; rainBus.connect(master);
     const len = ac.sampleRate * 2;
     noise = ac.createBuffer(1, len, ac.sampleRate);
     const d = noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   }
-  volEl.addEventListener("input", () => {
-    volume = parseFloat(volEl.value);
-    if (master) master.gain.setTargetAtTime(volume, ac.currentTime, 0.02);
-    try { localStorage.setItem("cs-vol", String(volume)); } catch (e) {}
-  });
 
-  function out(pan) {
-    if (ac.createStereoPanner) {
-      const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); p.connect(master); return p;
-    }
-    return master;
+  // ---------- Sound mixer panel ----------
+  const gear = $("gear"), panel = $("panel");
+  gear.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+    gear.setAttribute("aria-expanded", String(!panel.hidden));
+  });
+  document.addEventListener("pointerdown", e => {
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== gear) { panel.hidden = true; gear.setAttribute("aria-expanded", "false"); }
+  });
+  function bindSlider(id, key, apply) {
+    const el = $(id), o = $(id + "O");
+    el.value = mix[key]; o.textContent = Math.round(mix[key] * 100);
+    el.addEventListener("input", () => {
+      mix[key] = parseFloat(el.value); o.textContent = Math.round(mix[key] * 100);
+      store.set("mix", mix);
+      if (ac) apply(mix[key]);
+    });
   }
+  bindSlider("vol", "vol", v => { volume = v; master.gain.setTargetAtTime(v, ac.currentTime, 0.02); });
+  bindSlider("mixCrunch", "crunch", v => crunchBus.gain.setTargetAtTime(v, ac.currentTime, 0.02));
+  bindSlider("mixSquish", "squish", v => squishBus.gain.setTargetAtTime(v, ac.currentTime, 0.02));
+  bindSlider("mixRain", "rain", v => { if (rainOn) rainBus.gain.setTargetAtTime(v * 0.5, ac.currentTime, 0.1); });
+  const vibeEl = $("vibe");
+  vibeEl.checked = mix.vibe;
+  vibeEl.addEventListener("change", () => { mix.vibe = vibeEl.checked; store.set("mix", mix); });
+
+  function out(pan, bus) {
+    bus = bus || crunchBus;
+    if (ac.createStereoPanner) {
+      const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); p.connect(bus); return p;
+    }
+    return bus;
+  }
+
+  // ---------- Rain sounds: soft steady hiss plus random droplets ----------
+  let rainOn = false, rainSrc = null, dropTimer = 0;
+  const rainBtn = $("rain");
+  function startRain() {
+    if (!ac) return;
+    rainSrc = ac.createBufferSource(); rainSrc.buffer = noise; rainSrc.loop = true;
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200;
+    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 250;
+    const g = ac.createGain(); g.gain.value = 0.18;
+    rainSrc.connect(hp); hp.connect(lp); lp.connect(g); g.connect(rainBus);
+    rainSrc.start();
+    rainBus.gain.setTargetAtTime(mix.rain * 0.5, ac.currentTime, 0.6);
+  }
+  function stopRain() {
+    if (!ac || !rainSrc) return;
+    rainBus.gain.setTargetAtTime(0, ac.currentTime, 0.3);
+    const s = rainSrc; rainSrc = null;
+    setTimeout(() => { try { s.stop(); } catch (e) {} }, 1500);
+  }
+  function rainDrops(dt) {
+    if (!rainOn || !ac) return;
+    dropTimer -= dt;
+    while (dropTimer <= 0) {
+      dropTimer += 0.02 + Math.random() * 0.12;
+      const dest = ac.createStereoPanner ? (() => { const p = ac.createStereoPanner(); p.pan.value = Math.random() * 2 - 1; p.connect(rainBus); return p; })() : rainBus;
+      tick(ac.currentTime + Math.random() * 0.02, 1200 + Math.random() * 4000, 2, 0.08 + Math.random() * 0.25, 0.01 + Math.random() * 0.02, dest);
+    }
+  }
+  rainBtn.addEventListener("click", () => {
+    initAudio();
+    rainOn = !rainOn;
+    rainBtn.setAttribute("aria-pressed", String(rainOn));
+    if (rainOn) startRain(); else stopRain();
+  });
 
   // one crisp fracture tick: broadband noise with a resonant colour (not a thin bandpass,
   // so it keeps the sharp "edge" a real crack has)
@@ -277,7 +434,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   // wet squelch + bubbles: the jelly inside
   function squish(amount, pan, release = false) {
     if (!ac) return;
-    const s = P.squish, dest = out(pan), t = ac.currentTime + 0.003;
+    const s = P.squish, dest = out(pan, squishBus), t = ac.currentTime + 0.003;
     const src = ac.createBufferSource(); src.buffer = noise;
     const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 6;
     const f0 = s.f * (release ? 0.7 : 1.5), f1 = s.f * (release ? 1.2 : 0.35);
@@ -306,7 +463,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   // glossy pour for re-coating
   function pour() {
     if (!ac) return;
-    const t = ac.currentTime, dest = out(0);
+    const t = ac.currentTime, dest = out(0, master);
     const src = ac.createBufferSource(); src.buffer = noise;
     const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 3;
     bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(2400, t + 0.7);
@@ -316,11 +473,45 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     for (let i = 0; i < 6; i++) bubble(t + 0.1 + i * 0.09, 500 + i * 90, 0.06, dest);
   }
 
-  const buzz = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
+  const buzz = p => { if (!mix.vibe) return; try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
+
+  // ---------- Shapes: rest radius as a function of angle ----------
+  function shapeR(a, shape) {
+    const c = Math.cos(a), s = Math.sin(a);
+    switch (shape) {
+      case "cube": return 0.9 * Math.pow(Math.pow(Math.abs(c), 4) + Math.pow(Math.abs(s), 4), -0.25);
+      case "star": return 0.9 + 0.14 * Math.cos(5 * (a + Math.PI / 2));
+      case "drop": return 0.97 - 0.13 * s;
+      case "bun": return 1 / Math.sqrt((c * c) / (1.14 * 1.14) + (s * s) / (0.86 * 0.86));
+      default: return 1;
+    }
+  }
 
   // ---------- Soft body ----------
   const N = 72;
   const off = new Float32Array(N), vel = new Float32Array(N);
+  const rest = new Float32Array(N);
+  function buildShape() { for (let i = 0; i < N; i++) rest[i] = shapeR((i / N) * Math.PI * 2, P.shape); }
+  buildShape();
+
+  // Surface patterns (seeds, sprinkles, stars, powder), placed in local squishy space.
+  let deco = [];
+  function buildDeco() {
+    deco = [];
+    const kind = P.pattern;
+    if (!kind) return;
+    const count = { seeds: 26, sprinkles: 34, stars: 46, dust: 70 }[kind];
+    const cols = ["#ff5fa2", "#5cc8ff", "#7be07b", "#ffffff", "#ff9a3d", "#b07cff"];
+    let guard = 0;
+    while (deco.length < count && guard++ < 2000) {
+      const x = (Math.random() * 2 - 1) * 0.92, y = (Math.random() * 2 - 1) * 0.92;
+      const r = Math.hypot(x, y), a = Math.atan2(y, x);
+      if (r > shapeR(a, P.shape) * 0.86) continue;
+      if (kind !== "stars" && kind !== "dust" && Math.abs(y) < 0.3 && Math.abs(x) < 0.55) continue; // keep the face clear
+      deco.push({ x, y, rot: Math.random() * Math.PI, ph: Math.random() * 6.28, s: 0.5 + Math.random() * 0.8, col: cols[(Math.random() * cols.length) | 0] });
+    }
+  }
+  buildDeco();
   let squash = 0, squashV = 0;
   let W = 0, H = 0, dpr = 1, cx = 0, cy = 0, R = 100;
   let sx = 1, sy = 1;
@@ -350,7 +541,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   const WB = [0.5, 0.8, 1.2, 1.7, 2.3];
   const bucket = w => WB.reduce((b, v) => Math.abs(v - w) < Math.abs(b - w) ? v : b, WB[0]);
   const TAU = Math.PI * 2;
-  const inside = (x, y) => x * x + y * y < 1.0;
+  const inside = (x, y) => Math.hypot(x, y) < shapeR(Math.atan2(y, x), P.shape);
 
   function seg(x1, y1, x2, y2, w) { cracks.push({ x1, y1, x2, y2, w: bucket(w) }); }
 
@@ -472,7 +663,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     if (Math.floor(before * 4) > Math.floor(integrity * 4)) spawnShards(6);
     if (integrity <= 0 && !shattered) {
       shattered = true;
+      life.shatter++; store.set("life", life);
       spawnShards(26);
+      shake = Math.max(shake, 10);
       crackle(60, 1, 0, 0.02);
       buzz([30, 30, 20, 40, 15]);
       showToast("Shell shattered!");
@@ -480,21 +673,59 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     updateUI();
   }
 
+  // ---------- Tools ----------
+  // squeeze: the classic press. poke: a fingertip prod, small crisp cracks.
+  // smash: a heavy hit, big fractures, a deep knock and a little screen shake.
+  const TOOLS = {
+    squeeze: { power: [0.5, 1.0], depth: 1,    squash: 0.2,  loss: 0.06, crumbs: 10, snap: 1,   count: 1,   squish: 1 },
+    poke:    { power: [0.15, 0.3], depth: 1.6, squash: 0.06, loss: 0.02, crumbs: 4,  snap: 0.7, count: 0.5, squish: 0.4 },
+    smash:   { power: [1.1, 1.4], depth: 1.3, squash: 0.34, loss: 0.16, crumbs: 26, snap: 1.5, count: 1.8, squish: 1.3 }
+  };
+  let tool = "squeeze";
+  const toolBtns = [...document.querySelectorAll(".tool")];
+  function setTool(t) {
+    tool = t;
+    for (const b of toolBtns) b.setAttribute("aria-pressed", String(b.dataset.tool === t));
+  }
+  toolBtns.forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
+
+  // ---------- Combo: crunches in quick succession ----------
+  let combo = 0, lastCrunchAt = -9, comboHide = 0;
+  function bumpCombo() {
+    combo = time - lastCrunchAt < 0.75 ? combo + 1 : 1;
+    lastCrunchAt = time;
+    if (combo >= 3) {
+      comboN.textContent = "x" + combo;
+      comboEl.classList.add("show");
+      comboEl.animate && comboEl.animate([{ transform: "scale(1.25)" }, { transform: "scale(1)" }], { duration: 180 });
+      comboHide = 1.1;
+      if (combo > life.combo) { life.combo = combo; store.set("life", life); }
+    }
+  }
+
+  let shake = 0;
   function startPress(x, y, virtual) {
     const [lx, ly] = toLocal(x, y);
-    if (lx * lx + ly * ly > 1.3) return false;
-    Object.assign(press, { on: true, virtual, x, y, lastX: x, lastY: y, moved: 0 });
+    if (Math.hypot(lx, ly) > shapeR(Math.atan2(ly, lx), P.shape) * 1.12) return false;
+    const T = TOOLS[tool];
+    Object.assign(press, { on: true, virtual, x, y, lastX: x, lastY: y, moved: 0, tool: T });
     canvas.classList.add("pressing");
     hint.classList.add("gone");
-    const power = 0.5 + Math.random() * 0.5;
-    const hits = impactCrack(lx, ly, power);
+    const had = integrity > 0;
+    const power = T.power[0] + Math.random() * (T.power[1] - T.power[0]);
+    let hits = impactCrack(lx, ly, Math.min(1, power));
+    if (tool === "smash" && had) hits = hits.concat(impactCrack(lx + (Math.random() - 0.5) * 0.3, ly + (Math.random() - 0.5) * 0.3, 0.8));
     press.lx = lx; press.ly = ly;
     const shellAmt = Math.min(1, integrity * 1.4);
-    crackle(Math.round((10 + hits.length * 0.9) * (0.25 + shellAmt)), 0.45 + 0.55 * shellAmt, panOf(x), 0, integrity > 0);
-    squish(0.5 + 0.5 * (1 - shellAmt), panOf(x));
-    spawnCrumbs(hits, integrity > 0 ? 10 : 0);
-    if (integrity > 0) { crunches++; buzz([12, 18, 8, 25, 10]); } else buzz(15);
-    setIntegrity(integrity - (0.045 + Math.random() * 0.03));
+    crackle(Math.round((10 + hits.length * 0.9) * (0.25 + shellAmt) * T.count), (0.45 + 0.55 * shellAmt) * T.snap, panOf(x), 0, had);
+    squish((0.5 + 0.5 * (1 - shellAmt)) * T.squish, panOf(x));
+    spawnCrumbs(hits, had ? T.crumbs : 0);
+    if (tool === "smash") { shake = 7; squashV += 3; }
+    if (had) {
+      crunches++; life.crunch++; store.set("life", life); bumpCombo();
+      buzz(tool === "smash" ? [40, 20, 25, 30, 15] : tool === "poke" ? [6] : [12, 18, 8, 25, 10]);
+    } else buzz(15);
+    setIntegrity(integrity - T.loss * (0.75 + Math.random() * 0.5));
     return true;
   }
   function movePress(x, y) {
@@ -583,12 +814,44 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   }
   $("recoat").addEventListener("click", recoat);
 
+  let current = "peach";
   function choose(key) {
+    current = key;
     P = PROFILES[key];
-    for (const b of picks.children) b.setAttribute("aria-pressed", String(b.dataset.key === key));
+    buildShape(); buildDeco();
+    for (const b of picks.children) {
+      const on = b.dataset.key === key;
+      b.setAttribute("aria-pressed", String(on));
+      if (on) b.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+    }
     recoat();
-    crunches = 0; updateUI();
+    crunches = 0; combo = 0; updateUI();
   }
+  function shuffle() {
+    const keys = Object.keys(PROFILES).filter(k => k !== current);
+    choose(keys[(Math.random() * keys.length) | 0]);
+    showToast(P.name + "!");
+  }
+  $("shuffle").addEventListener("click", shuffle);
+
+  // ---------- Keyboard ----------
+  let keyHeld = false;
+  document.addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest("input, .panel")) return;
+    const k = e.key.toLowerCase();
+    if ((k === " " || k === "enter") && document.activeElement === canvas || k === " " && document.activeElement === document.body) {
+      e.preventDefault();
+      if (keyHeld) return;
+      keyHeld = true; initAudio();
+      const a = Math.random() * Math.PI * 2, r = Math.random() * 0.6;
+      startPress(cx + Math.cos(a) * r * R, cy + Math.sin(a) * r * R, true);
+    } else if (k === "1" || k === "2" || k === "3") setTool(["squeeze", "poke", "smash"][+k - 1]);
+    else if (k === "r") recoat();
+    else if (k === "s") { initAudio(); shuffle(); }
+  });
+  document.addEventListener("keyup", e => {
+    if (keyHeld && (e.key === " " || e.key === "Enter")) { keyHeld = false; if (press.on && press.virtual && !autoPlan) endPress(); }
+  });
 
   let toastTimer = 0;
   function showToast(msg) {
@@ -600,12 +863,15 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     shellTxt.textContent = `Shell ${pct}%`;
     meter.style.width = pct + "%";
     crunchTxt.textContent = `${crunches} crunch${crunches === 1 ? "" : "es"}`;
+    $("lifeCrunch").textContent = life.crunch.toLocaleString();
+    $("lifeShatter").textContent = life.shatter.toLocaleString();
+    $("lifeCombo").textContent = "x" + life.combo;
   }
-  updateUI();
 
   // ---------- Render ----------
   let gloss = 0; // shimmer after re-coat
   const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  updateUI();
 
   function hexA(hex, a) {
     const n = parseInt(hex.slice(1), 16);
@@ -616,7 +882,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     const pts = [];
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2;
-      const rr = R * (1 + off[i]);
+      const rr = R * rest[i] * (1 + off[i]);
       pts.push([cx + Math.cos(a) * rr * sx, cy + Math.sin(a) * rr * sy]);
     }
     const p = new Path2D();
@@ -635,12 +901,15 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   function frame(now) {
     let dt = Math.min(0.033, (now - last) / 1000); last = now; time += dt;
     runAuto(dt);
+    rainDrops(dt);
+    if (comboHide > 0) { comboHide -= dt; if (comboHide <= 0) comboEl.classList.remove("show"); }
 
     // physics (two substeps for stability)
     for (let sub = 0; sub < 2; sub++) {
       const h = dt / 2;
       press.amt += ((press.on ? 1 : 0) - press.amt) * Math.min(1, h * (press.on ? 9 : 30));
-      const target = press.amt * 0.2;
+      const T = press.tool || TOOLS.squeeze;
+      const target = press.amt * T.squash;
       squashV += (-260 * (squash - target) - 11 * squashV) * h;
       squash += squashV * h;
       let pa = 0, pd = 0;
@@ -652,7 +921,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
         const a = (i / N) * Math.PI * 2;
         let d = a - pa; d = Math.atan2(Math.sin(d), Math.cos(d));
         const idle = reduceMotion ? 0 : 0.008 * Math.sin(time * 2.2 + a * 3);
-        const tgt = idle + press.amt * (-0.16 * pd * Math.exp(-(d * d) / 0.22) + 0.04);
+        const tgt = idle + press.amt * (-0.16 * T.depth * pd * Math.exp(-(d * d) / 0.22) + 0.04);
         const lap = off[(i + N - 1) % N] + off[(i + 1) % N] - 2 * off[i];
         vel[i] += (-200 * (off[i] - tgt) - 9 * vel[i] + 900 * lap) * h;
       }
@@ -662,6 +931,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
+    if (shake > 0.1 && !reduceMotion) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    shake *= Math.pow(0.002, dt);
 
     // ground shadow
     const shY = cy + R * sy * 1.02 + 6;
@@ -680,6 +951,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     ctx.clip(path);
     ctx.translate(cx, cy); ctx.scale(R * sx, R * sy);
 
+    drawDeco();
     // face
     drawFace();
 
@@ -763,6 +1035,37 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     if (particles.length > 400) particles.splice(0, particles.length - 400);
 
     requestAnimationFrame(frame);
+  }
+
+  function drawDeco() {
+    for (const d of deco) {
+      ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.rot);
+      switch (P.pattern) {
+        case "seeds": // little golden strawberry seeds
+          ctx.fillStyle = "rgba(255,226,120,0.95)";
+          ctx.beginPath(); ctx.ellipse(0, 0, 0.018, 0.032, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "rgba(160,40,60,0.35)";
+          ctx.beginPath(); ctx.ellipse(0.006, 0.006, 0.012, 0.024, 0, 0, Math.PI * 2); ctx.fill();
+          break;
+        case "sprinkles": // candy sprinkles
+          ctx.fillStyle = d.col;
+          ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-0.045, -0.013, 0.09, 0.026, 0.013) : ctx.rect(-0.045, -0.013, 0.09, 0.026); ctx.fill();
+          break;
+        case "stars": { // twinkling galaxy stars
+          const tw = 0.35 + 0.65 * Math.abs(Math.sin(time * 1.6 + d.ph));
+          const r = 0.022 * d.s;
+          ctx.fillStyle = `rgba(255,255,255,${tw})`;
+          ctx.beginPath(); ctx.moveTo(0, -r * 2); ctx.lineTo(r * 0.5, 0); ctx.lineTo(0, r * 2); ctx.lineTo(-r * 0.5, 0); ctx.closePath(); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(-r * 2, 0); ctx.lineTo(0, r * 0.5); ctx.lineTo(r * 2, 0); ctx.lineTo(0, -r * 0.5); ctx.closePath(); ctx.fill();
+          break;
+        }
+        case "dust": // matcha powder dusting
+          ctx.fillStyle = "rgba(70,110,30,0.22)";
+          ctx.beginPath(); ctx.arc(0, 0, 0.012 * d.s, 0, Math.PI * 2); ctx.fill();
+          break;
+      }
+      ctx.restore();
+    }
   }
 
   function drawFace() {
