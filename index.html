@@ -104,6 +104,12 @@ canvas.pressing { cursor: grabbing; }
 .pick .dot.bun { width: 30px; height: 22px; margin-block: 2px; }
 .pick[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.sounds { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: -4px; scrollbar-width: thin; }
+.snd {
+  flex: 0 0 auto; font: inherit; font-weight: 800; font-size: 0.78rem; color: var(--ink-soft);
+  background: transparent; border: 1.5px dashed var(--line); border-radius: 999px; padding: 6px 12px; cursor: pointer; white-space: nowrap;
+}
+.snd[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--line); border-radius: 14px; padding: 3px; gap: 3px; }
 .tool {
   font: inherit; font-weight: 800; font-size: 0.85rem; color: var(--ink-soft); background: transparent;
@@ -121,7 +127,7 @@ canvas.pressing { cursor: grabbing; }
   display: grid; gap: 12px; box-shadow: 0 12px 32px rgba(40, 10, 25, .18);
 }
 .panel h2 { margin: 0; font-family: var(--font-display); font-size: 1.05rem; }
-.slider { display: grid; grid-template-columns: 70px 1fr 38px; align-items: center; gap: 8px; font-weight: 800; font-size: 0.82rem; }
+.slider { display: grid; grid-template-columns: 78px 1fr 38px; align-items: center; gap: 8px; font-weight: 800; font-size: 0.82rem; }
 .slider input { width: 100%; }
 .slider output { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-soft); text-align: right; font-variant-numeric: tabular-nums; }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.85rem; }
@@ -156,9 +162,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   <header>
     <div>
       <h1>Crackle <span>Squish</span></h1>
-      <p class="sub">Press, hold &amp; drag to crack the sugar shell. Headphones on.</p>
+      <p class="sub">Press, hold &amp; drag the squishy, then pick a sound below. Headphones on.</p>
     </div>
-    <button class="gear" id="gear" type="button" aria-expanded="false" aria-controls="panel">Sound</button>
+    <button class="gear" id="gear" type="button" aria-expanded="false" aria-controls="panel">Mixer</button>
   </header>
 
   <div class="stage" id="stage">
@@ -169,9 +175,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     <div class="panel" id="panel" hidden>
       <h2>Sound mixer</h2>
       <label class="slider" for="vol">Volume <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8"><output id="volO">80</output></label>
-      <label class="slider" for="mixCrunch">Crunch <input id="mixCrunch" type="range" min="0" max="1.5" step="0.01" value="1"><output id="mixCrunchO">100</output></label>
+      <label class="slider" for="mixCrunch">Effects <input id="mixCrunch" type="range" min="0" max="1.5" step="0.01" value="1"><output id="mixCrunchO">100</output></label>
       <label class="slider" for="mixSquish">Squish <input id="mixSquish" type="range" min="0" max="1.5" step="0.01" value="1"><output id="mixSquishO">100</output></label>
-      <label class="slider" for="mixRain">Rain <input id="mixRain" type="range" min="0" max="1" step="0.01" value="0.5"><output id="mixRainO">50</output></label>
+      <label class="slider" for="mixRain">Ambience <input id="mixRain" type="range" min="0" max="1" step="0.01" value="0.5"><output id="mixRainO">50</output></label>
       <label class="check" for="vibe"><input id="vibe" type="checkbox" checked> Vibrate on cracks</label>
       <div class="lifetime">
         <span>All-time crunches <b id="lifeCrunch">0</b></span>
@@ -194,10 +200,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       <button class="tool" type="button" data-tool="smash" aria-pressed="false">Smash</button>
     </div>
     <div class="picks" id="picks" role="group" aria-label="Squishy"></div>
+    <div class="sounds" id="sounds" role="group" aria-label="Sound style"></div>
     <div class="actions">
       <button class="btn primary" id="recoat" type="button">Re-coat</button>
       <button class="btn" id="shuffle" type="button">Shuffle</button>
-      <button class="btn" id="rain" type="button" aria-pressed="false">Rain</button>
+      <button class="btn" id="rain" type="button" aria-pressed="false">Ambience: off</button>
       <button class="btn" id="auto" type="button" aria-pressed="false">Auto ASMR</button>
     </div>
   </div>
@@ -349,39 +356,81 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     return bus;
   }
 
-  // ---------- Rain sounds: soft steady hiss plus random droplets ----------
-  let rainOn = false, rainSrc = null, dropTimer = 0;
+  // ---------- Ambience: rain, ocean waves, fireplace ----------
+  const AMBS = ["off", "rain", "ocean", "fire"];
+  const AMB_LABEL = { off: "Ambience: off", rain: "Rain", ocean: "Ocean", fire: "Fireplace" };
+  let amb = "off", ambNodes = [], dropTimer = 0;
+  let rainOn = false; // true while any ambience is playing
   const rainBtn = $("rain");
-  function startRain() {
+  function loopNoise() { const s = ac.createBufferSource(); s.buffer = noise; s.loop = true; s.loopStart = Math.random(); return s; }
+  function filt(type, f, q) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q) b.Q.value = q; return b; }
+  function startAmb(kind) {
     if (!ac) return;
-    rainSrc = ac.createBufferSource(); rainSrc.buffer = noise; rainSrc.loop = true;
-    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200;
-    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 250;
-    const g = ac.createGain(); g.gain.value = 0.18;
-    rainSrc.connect(hp); hp.connect(lp); lp.connect(g); g.connect(rainBus);
-    rainSrc.start();
-    rainBus.gain.setTargetAtTime(mix.rain * 0.5, ac.currentTime, 0.6);
+    const t = ac.currentTime;
+    if (kind === "rain") {
+      const s = loopNoise(), hp = filt("highpass", 250), lp = filt("lowpass", 2200), g = ac.createGain(); g.gain.value = 0.18;
+      s.connect(hp); hp.connect(lp); lp.connect(g); g.connect(rainBus); s.start();
+      ambNodes.push(s);
+    } else if (kind === "ocean") {
+      // two slow, out-of-step swells of filtered noise: waves rolling in and out
+      for (const [rate, lev, f, pan] of [[0.085, 0.22, 700, -0.5], [0.061, 0.18, 1000, 0.5]]) {
+        const s = loopNoise(), lp = filt("lowpass", f, 0.7), g = ac.createGain(); g.gain.value = lev;
+        const lfo = ac.createOscillator(); lfo.frequency.value = rate;
+        const depth = ac.createGain(); depth.gain.value = lev * 0.95; lfo.connect(depth); depth.connect(g.gain);
+        const fl = ac.createGain(); fl.gain.value = f * 0.6; lfo.connect(fl); fl.connect(lp.frequency);
+        const p = ac.createStereoPanner ? ac.createStereoPanner() : null;
+        s.connect(lp); lp.connect(g);
+        if (p) { p.pan.value = pan; g.connect(p); p.connect(rainBus); } else g.connect(rainBus);
+        s.start(); lfo.start(t + Math.random() * 3);
+        ambNodes.push(s, lfo);
+      }
+    } else if (kind === "fire") {
+      // low roar of the flames; pops and crackles are scheduled in ambTick
+      const s = loopNoise(), lp = filt("lowpass", 380, 0.8), g = ac.createGain(); g.gain.value = 0.3;
+      s.connect(lp); lp.connect(g); g.connect(rainBus); s.start();
+      ambNodes.push(s);
+    }
+    rainBus.gain.cancelScheduledValues(t);
+    rainBus.gain.setTargetAtTime(mix.rain * 0.5, t, 0.6);
   }
-  function stopRain() {
-    if (!ac || !rainSrc) return;
-    rainBus.gain.setTargetAtTime(0, ac.currentTime, 0.3);
-    const s = rainSrc; rainSrc = null;
-    setTimeout(() => { try { s.stop(); } catch (e) {} }, 1500);
+  function stopAmb() {
+    if (!ac) return;
+    rainBus.gain.cancelScheduledValues(ac.currentTime);
+    rainBus.gain.setTargetAtTime(0, ac.currentTime, 0.25);
+    const old = ambNodes; ambNodes = [];
+    setTimeout(() => old.forEach(n => { try { n.stop(); } catch (e) {} }), 1200);
+  }
+  function ambOut() {
+    if (!ac.createStereoPanner) return rainBus;
+    const p = ac.createStereoPanner(); p.pan.value = Math.random() * 2 - 1; p.connect(rainBus); return p;
   }
   function rainDrops(dt) {
-    if (!rainOn || !ac) return;
+    if (!rainOn || !ac || ambNodes.length === 0) return;
     dropTimer -= dt;
     while (dropTimer <= 0) {
-      dropTimer += 0.02 + Math.random() * 0.12;
-      const dest = ac.createStereoPanner ? (() => { const p = ac.createStereoPanner(); p.pan.value = Math.random() * 2 - 1; p.connect(rainBus); return p; })() : rainBus;
-      tick(ac.currentTime + Math.random() * 0.02, 1200 + Math.random() * 4000, 2, 0.08 + Math.random() * 0.25, 0.01 + Math.random() * 0.02, dest);
+      const t = ac.currentTime + Math.random() * 0.02;
+      if (amb === "rain") {
+        dropTimer += 0.02 + Math.random() * 0.12;
+        tick(t, 1200 + Math.random() * 4000, 2, 0.08 + Math.random() * 0.25, 0.01 + Math.random() * 0.02, ambOut());
+      } else if (amb === "fire") {
+        dropTimer += 0.04 + Math.random() * 0.35;
+        const dest = ambOut();
+        const n = Math.random() < 0.15 ? 4 + ((Math.random() * 6) | 0) : 1; // the odd burst of sparks
+        for (let i = 0; i < n; i++) tick(t + i * (0.008 + Math.random() * 0.03), 1200 + Math.random() * 3500, 1.2, 0.15 + Math.random() * 0.45, 0.006 + Math.random() * 0.015, dest);
+        if (Math.random() < 0.08) tick(t, 300 + Math.random() * 300, 1, 0.6, 0.05, dest); // a log settling
+      } else {
+        dropTimer += 0.5;
+      }
     }
   }
   rainBtn.addEventListener("click", () => {
     initAudio();
-    rainOn = !rainOn;
+    stopAmb();
+    amb = AMBS[(AMBS.indexOf(amb) + 1) % AMBS.length];
+    rainOn = amb !== "off";
     rainBtn.setAttribute("aria-pressed", String(rainOn));
-    if (rainOn) startRain(); else stopRain();
+    rainBtn.textContent = AMB_LABEL[amb];
+    if (rainOn) startAmb(amb);
   });
 
   // one crisp fracture tick: broadband noise with a resonant colour (not a thin bandpass,
@@ -471,6 +520,172 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.3, t + 0.1); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
     src.connect(bp); bp.connect(g); g.connect(dest); src.start(t, 0, 1);
     for (let i = 0; i < 6; i++) bubble(t + 0.1 + i * 0.09, 500 + i * 90, 0.06, dest);
+  }
+
+  // ---------- Sound styles ----------
+  // Each style answers three moments: press (with how much shell broke), drag steps and release.
+  // ctx object: { pan, n (crack segments made), shell (0-1 shell left), had (shell existed), power, count }
+  const R1 = (a, b) => a + Math.random() * (b - a);
+
+  function tone(t, f, type, gain, attack, decay, dest, f2) {
+    const o = ac.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + decay);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t + attack + decay + 0.05);
+  }
+  function burst(t, type, f, q, gain, dur, dest, f2) {
+    const s = ac.createBufferSource(); s.buffer = noise;
+    const b = ac.createBiquadFilter(); b.type = type; b.frequency.setValueAtTime(f, t); b.Q.value = q;
+    if (f2) b.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain, t + Math.min(0.004, dur / 4));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(b); b.connect(g); g.connect(dest); s.start(t, Math.random() * 1.5, dur + 0.05);
+  }
+
+  // slime: wet clicks and air pockets popping
+  function slimeClicks(t, n, gain, dest) {
+    for (let i = 0; i < n; i++) {
+      t += R1(0.01, 0.06);
+      burst(t, "bandpass", R1(500, 1800), R1(3, 8), gain * R1(0.3, 1), R1(0.008, 0.02), dest);
+      if (Math.random() < 0.35) tone(t, R1(250, 600), "sine", gain * 0.35, 0.002, 0.04, dest, R1(700, 1200));
+    }
+  }
+  // bubble wrap: a sharp air pop with a little plastic ring
+  function wrapPop(t, gain, dest) {
+    burst(t, "highpass", 900, 0.7, gain * 1.2, 0.02, dest);
+    burst(t, "bandpass", R1(1400, 2600), 2.5, gain, 0.035, dest);
+    tone(t, R1(180, 260), "sine", gain * 0.5, 0.001, 0.03, dest, 90);
+  }
+  // squeaky foam: rubbery friction, a pitched squeak that wobbles
+  function squeak(t, gain, dur, dest) {
+    const o = ac.createOscillator(); o.type = "sawtooth";
+    const f = R1(500, 1300);
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.linearRampToValueAtTime(f * R1(0.8, 1.35), t + dur);
+    const wob = ac.createOscillator(); wob.frequency.value = R1(25, 45);
+    const wg = ac.createGain(); wg.gain.value = f * 0.04; wob.connect(wg); wg.connect(o.frequency);
+    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = f * 2; bp.Q.value = 3;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.015);
+    g.gain.setValueAtTime(gain * 0.8, t + dur * 0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(bp); bp.connect(g); g.connect(dest);
+    o.start(t); wob.start(t); o.stop(t + dur + 0.02); wob.stop(t + dur + 0.02);
+  }
+  // crinkle: plastic wrapper, dense irregular crackle with longer grains
+  function crinkle(t, n, gain, dest) {
+    for (let i = 0; i < n; i++) {
+      t += Math.random() < 0.2 ? R1(0.03, 0.07) : R1(0.003, 0.018);
+      burst(t, "bandpass", R1(2000, 9000), R1(0.6, 1.5), gain * Math.pow(Math.random(), 1.5), R1(0.01, 0.03), dest);
+    }
+  }
+  // popping candy: a fizz that keeps going after you let go
+  function fizz(t, n, len, gain, dest) {
+    burst(t, "highpass", 5000, 0.7, gain * 0.35, len, dest);
+    for (let i = 0; i < n; i++) {
+      const k = Math.pow(Math.random(), 1.8); // denser at the start
+      tick(t + k * len, R1(3000, 10000), 3, gain * (1 - k) * R1(0.3, 1), R1(0.002, 0.006), dest);
+    }
+  }
+  // tapping: fingernails on a hard candy shell
+  function tap(t, gain, dest) {
+    const f = R1(1100, 2200);
+    tone(t, f, "triangle", gain, 0.001, 0.035, dest);
+    tone(t, f * 2.3, "sine", gain * 0.4, 0.001, 0.02, dest);
+    burst(t, "highpass", 3000, 0.7, gain * 0.6, 0.006, dest);
+  }
+  function scratch(t, dur, gain, dest) {
+    const n = Math.round(dur / 0.012);
+    for (let i = 0; i < n; i++) burst(t + i * R1(0.008, 0.014), "bandpass", R1(2500, 5000), 2, gain * R1(0.3, 1), 0.012, dest);
+  }
+  // glass chime: bell-like tinkles on a pentatonic scale, so it always sounds pretty
+  const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
+  function chime(t, gain, dest) {
+    const f = 1046.5 * Math.pow(2, PENTA[(Math.random() * PENTA.length) | 0] / 12);
+    const d = R1(0.6, 1.3);
+    tone(t, f, "sine", gain, 0.002, d, dest);
+    tone(t, f * 2.76, "sine", gain * 0.35, 0.002, d * 0.5, dest);
+    tone(t, f * 5.4, "sine", gain * 0.15, 0.002, d * 0.25, dest);
+  }
+
+  const VOICES = {
+    crack: {
+      name: "Crack",
+      press: c => crackle(Math.round((10 + c.n * 0.9) * (0.25 + c.shell) * c.count), (0.45 + 0.55 * c.shell) * c.power, c.pan, 0, c.had),
+      drag: c => crackle(Math.round((4 + c.n * 1.5) * (0.2 + c.shell)), 0.35 + 0.55 * c.shell, c.pan),
+      release: c => { if (c.had) crackle(2 + ((Math.random() * 4) | 0), 0.25, c.pan, 0.06 + Math.random() * 0.1); }
+    },
+    slime: {
+      name: "Slime",
+      press: c => { const d = out(c.pan); slimeClicks(ac.currentTime, Math.round(6 + 6 * c.power), 0.9, d); squish(0.9 * c.power, c.pan); },
+      drag: c => { slimeClicks(ac.currentTime, 2 + ((Math.random() * 3) | 0), 0.7, out(c.pan)); if (Math.random() < 0.4) squish(0.35, c.pan); },
+      release: c => { const d = out(c.pan), t = ac.currentTime; tone(t + 0.02, R1(200, 320), "sine", 0.5, 0.003, 0.08, d, R1(700, 1000)); slimeClicks(t + 0.04, 3, 0.5, d); }
+    },
+    wrap: {
+      name: "Bubble wrap",
+      press: c => { const d = out(c.pan); let t = ac.currentTime; const n = Math.round(1 + c.power * 2.5); for (let i = 0; i < n; i++) { wrapPop(t, R1(0.7, 1.1), d); t += R1(0.03, 0.12); } },
+      drag: c => { if (Math.random() < 0.55) wrapPop(ac.currentTime + R1(0, 0.03), R1(0.5, 0.9), out(c.pan)); },
+      release: c => {}
+    },
+    squeak: {
+      name: "Squeaky foam",
+      press: c => { const d = out(c.pan), t = ac.currentTime; squeak(t, 0.5, R1(0.12, 0.25), d); tone(t, 140, "sine", 0.6 * c.power, 0.004, 0.12, d, 70); },
+      drag: c => squeak(ac.currentTime, 0.35, R1(0.06, 0.13), out(c.pan)),
+      release: c => squeak(ac.currentTime + 0.02, 0.25, 0.1, out(c.pan))
+    },
+    crinkle: {
+      name: "Crinkle",
+      press: c => crinkle(ac.currentTime, Math.round(25 + 20 * c.power), 0.9, out(c.pan)),
+      drag: c => crinkle(ac.currentTime, 8, 0.7, out(c.pan)),
+      release: c => crinkle(ac.currentTime + 0.05, 10, 0.4, out(c.pan))
+    },
+    fizz: {
+      name: "Popping candy",
+      press: c => { fizz(ac.currentTime, Math.round(50 + 50 * c.power), 1.2 + c.power, 0.8, out(c.pan)); squish(0.3, c.pan); },
+      drag: c => fizz(ac.currentTime, 12, 0.5, 0.6, out(c.pan)),
+      release: c => {}
+    },
+    tap: {
+      name: "Tapping",
+      press: c => { const d = out(c.pan); let t = ac.currentTime; const n = 2 + ((Math.random() * 3) | 0); for (let i = 0; i < n; i++) { tap(t, R1(0.6, 1) * c.power, d); t += R1(0.05, 0.09); } },
+      drag: c => scratch(ac.currentTime, 0.07, 0.5, out(c.pan)),
+      release: c => tap(ac.currentTime + 0.03, 0.4, out(c.pan))
+    },
+    chime: {
+      name: "Glass chime",
+      press: c => { const d = out(c.pan); let t = ac.currentTime; const n = 2 + ((Math.random() * 2) | 0); for (let i = 0; i < n; i++) { chime(t, 0.35, d); t += R1(0.05, 0.15); } tick(ac.currentTime, 6000, 3, 0.5, 0.004, d); },
+      drag: c => { if (Math.random() < 0.5) chime(ac.currentTime, 0.22, out(c.pan)); },
+      release: c => {}
+    },
+    mix: { name: "Mix" }
+  };
+  const MIXABLE = Object.keys(VOICES).filter(k => k !== "mix");
+  let soundMode = store.get("sound", "crack");
+  if (!VOICES[soundMode]) soundMode = "crack";
+  let pressVoice = "crack";
+  const voice = () => VOICES[soundMode === "mix" ? pressVoice : soundMode];
+
+  const soundsEl = $("sounds");
+  for (const [key, v] of Object.entries(VOICES)) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "snd"; b.dataset.key = key; b.textContent = v.name;
+    b.setAttribute("aria-pressed", String(key === soundMode));
+    b.addEventListener("click", () => {
+      initAudio();
+      soundMode = key; store.set("sound", key);
+      for (const x of soundsEl.children) x.setAttribute("aria-pressed", String(x.dataset.key === key));
+      // play a little preview
+      pressVoice = key === "mix" ? MIXABLE[(Math.random() * MIXABLE.length) | 0] : key;
+      voice().press({ pan: 0, n: 8, shell: 1, had: true, power: 0.8, count: 0.6 });
+    });
+    soundsEl.appendChild(b);
   }
 
   const buzz = p => { if (!mix.vibe) return; try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
@@ -666,7 +881,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       life.shatter++; store.set("life", life);
       spawnShards(26);
       shake = Math.max(shake, 10);
-      crackle(60, 1, 0, 0.02);
+      if (voice() === VOICES.crack) crackle(60, 1, 0, 0.02);
+      else voice().press({ pan: 0, n: 30, shell: 1, had: true, power: 1.4, count: 2 });
       buzz([30, 30, 20, 40, 15]);
       showToast("Shell shattered!");
     }
@@ -717,8 +933,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     if (tool === "smash" && had) hits = hits.concat(impactCrack(lx + (Math.random() - 0.5) * 0.3, ly + (Math.random() - 0.5) * 0.3, 0.8));
     press.lx = lx; press.ly = ly;
     const shellAmt = Math.min(1, integrity * 1.4);
-    crackle(Math.round((10 + hits.length * 0.9) * (0.25 + shellAmt) * T.count), (0.45 + 0.55 * shellAmt) * T.snap, panOf(x), 0, had);
-    squish((0.5 + 0.5 * (1 - shellAmt)) * T.squish, panOf(x));
+    pressVoice = MIXABLE[(Math.random() * MIXABLE.length) | 0];
+    voice().press({ pan: panOf(x), n: hits.length, shell: shellAmt, had, power: T.snap, count: T.count });
+    if (voice() === VOICES.crack) squish((0.5 + 0.5 * (1 - shellAmt)) * T.squish, panOf(x));
+    else squish(0.35 * T.squish, panOf(x));
     spawnCrumbs(hits, had ? T.crumbs : 0);
     if (tool === "smash") { shake = 7; squashV += 3; }
     if (had) {
@@ -740,7 +958,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       const hits = dragCrack(press.lx, press.ly, lx, ly);
       press.lx = lx; press.ly = ly;
       const shellAmt = Math.min(1, integrity * 1.4);
-      crackle(Math.round((4 + hits.length * 1.5) * (0.2 + shellAmt)), 0.35 + 0.55 * shellAmt, panOf(x));
+      voice().drag({ pan: panOf(x), n: hits.length, shell: shellAmt, had: integrity > 0, power: 1, count: 1 });
       if (Math.random() < 0.25) squish(0.25, panOf(x));
       spawnCrumbs(hits, integrity > 0 ? 3 : 0);
       if (integrity > 0) buzz(6);
@@ -753,7 +971,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     canvas.classList.remove("pressing");
     squish(0.5, panOf(press.x), true);
     // little settling crackles after letting go
-    if (integrity > 0) crackle(2 + ((Math.random() * 4) | 0), 0.25, panOf(press.x), 0.06 + Math.random() * 0.1);
+    voice().release({ pan: panOf(press.x), n: 0, shell: integrity, had: integrity > 0, power: 1, count: 1 });
     squashV -= 2.5; // bounce back
   }
 

@@ -1,6 +1,6 @@
 # Crackle Squish
 
-An ASMR squishy toy for the browser. Press, hold and drag a squishy to crack its sugar shell. Every crunch, squelch, bubble and raindrop is made live with the Web Audio API, so there are no audio files.
+An ASMR squishy toy for the browser. Press, hold and drag a squishy to crack its sugar shell. Every crunch, squelch, pop, squeak, chime and raindrop is made live with the Web Audio API, so there are no audio files.
 
 Open `index.html` in any browser. Headphones recommended.
 
@@ -11,8 +11,9 @@ Peach, Cloud, Honey (cube), Mint Ice, Strawberry (with seeds), Lemon Star (star 
 - **Tools:** Squeeze, Poke (small crisp cracks) and Smash (big fractures, deep knock, screen shake)
 - **Realistic cracks:** spiderweb fractures, light-catching shards, chipped spots and cracks you can drag
 - **Combos** for quick crunches in a row
-- **Rain sounds** to play in the background
-- **Sound mixer:** volume, crunch, squish and rain levels, plus a vibration toggle
+- **Sound styles:** Crack, Slime, Bubble wrap, Squeaky foam, Crinkle, Popping candy, Tapping, Glass chime, or Mix for a random one each press
+- **Ambience:** rain, ocean waves or a crackling fireplace in the background
+- **Mixer:** volume, effects, squish and ambience levels, plus a vibration toggle
 - **All-time stats** for crunches, shattered shells and best combo, saved in your browser
 - **Shuffle** for a random squishy, **Re-coat** for a fresh shell, and **Auto ASMR** to let it crunch on its own
 - **Keyboard:** Space crunches, 1–3 switch tools, R re-coats, S shuffles
