@@ -151,25 +151,25 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     peach: {
       name: "Peach", light: "#ffd9cf", base: "#ff9f8e", dark: "#e5675a",
       shell: "#fff3e6", crackLight: "#fffaf3", crackDark: "#b84a3f", face: "#5b2a2a", blush: "#ff6f7d",
-      crack: { fLo: 2200, fHi: 7200, q: 1.4, gap: 0.011, dur: 0.006, gain: 0.85, pop: 0.16, popF: 1300 },
+      crack: { fLo: 2200, fHi: 7200, q: 1.4, gap: 0.011, dur: 0.006, gain: 1.6, pop: 0.16, popF: 1300, body: 380 },
       squish: { f: 900, bubbles: 2 }
     },
     cloud: {
       name: "Cloud", light: "#eee6ff", base: "#c6b2ff", dark: "#8f74e6",
       shell: "#ffffff", crackLight: "#ffffff", crackDark: "#6b52c4", face: "#35285e", blush: "#ff8fc3",
-      crack: { fLo: 900, fHi: 3800, q: 0.8, gap: 0.007, dur: 0.010, gain: 0.6, pop: 0.05, popF: 700 },
+      crack: { fLo: 900, fHi: 3800, q: 0.8, gap: 0.007, dur: 0.010, gain: 1.3, pop: 0.05, popF: 700, body: 260 },
       squish: { f: 620, bubbles: 1 }
     },
     honey: {
       name: "Honey", light: "#ffe7a6", base: "#ffc24d", dark: "#e08a12",
       shell: "#fff0c2", crackLight: "#fff9e6", crackDark: "#9b5a05", face: "#4d2c05", blush: "#ff8a5c",
-      crack: { fLo: 700, fHi: 2700, q: 3, gap: 0.019, dur: 0.012, gain: 0.95, pop: 0.35, popF: 480 },
+      crack: { fLo: 700, fHi: 2700, q: 3, gap: 0.019, dur: 0.012, gain: 1.7, pop: 0.35, popF: 480, body: 220 },
       squish: { f: 440, bubbles: 5 }
     },
     mint: {
       name: "Mint Ice", light: "#dcfff4", base: "#93ecd2", dark: "#3fbf9b",
       shell: "#f0fffb", crackLight: "#ffffff", crackDark: "#1f8c70", face: "#14463a", blush: "#ff9db0",
-      crack: { fLo: 3600, fHi: 9800, q: 4.5, gap: 0.014, dur: 0.004, gain: 0.8, pop: 0.22, popF: 2600 },
+      crack: { fLo: 3600, fHi: 9800, q: 4.5, gap: 0.014, dur: 0.004, gain: 1.6, pop: 0.22, popF: 2600, body: 600 },
       squish: { f: 1100, bubbles: 1 }
     }
   };
@@ -201,10 +201,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ac = new AC();
+    // master -> compressor -> makeup gain -> brickwall limiter: loud but never clipping
     const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -18; comp.ratio.value = 4; comp.attack.value = 0.002; comp.release.value = 0.12;
+    comp.threshold.value = -24; comp.knee.value = 6; comp.ratio.value = 5; comp.attack.value = 0.001; comp.release.value = 0.08;
+    const makeup = ac.createGain(); makeup.gain.value = 2.6;
+    const limiter = ac.createDynamicsCompressor();
+    limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.0005; limiter.release.value = 0.05;
     master = ac.createGain(); master.gain.value = volume;
-    master.connect(comp); comp.connect(ac.destination);
+    master.connect(comp); comp.connect(makeup); makeup.connect(limiter); limiter.connect(ac.destination);
     const len = ac.sampleRate * 2;
     noise = ac.createBuffer(1, len, ac.sampleRate);
     const d = noise.getChannelData(0);
@@ -223,31 +227,50 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     return master;
   }
 
-  // one tiny crisp tick of filtered noise
+  // one crisp fracture tick: broadband noise with a resonant colour (not a thin bandpass,
+  // so it keeps the sharp "edge" a real crack has)
   function tick(t, freq, q, gain, dur, dest) {
     const src = ac.createBufferSource(); src.buffer = noise;
-    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq; bp.Q.value = q;
-    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 300;
+    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = Math.min(freq * 0.35, 2500);
+    const pk = ac.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = freq; pk.Q.value = q; pk.gain.value = 12;
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(gain, t + 0.0007);
+    g.gain.linearRampToValueAtTime(gain, t + 0.0004);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(dest);
+    src.connect(hp); hp.connect(pk); pk.connect(g); g.connect(dest);
     src.start(t, Math.random() * 1.8, dur + 0.03);
   }
 
-  // a burst of crackles: the sugar shell giving way
-  function crackle(count, intensity, pan, delay = 0) {
+  // the moment the shell first breaks: a hard snap plus a low knock through the jelly
+  function snap(t, intensity, dest) {
+    tick(t, 3500, 0.7, intensity * 1.6, 0.005, dest);
+    tick(t + 0.002, 1800, 1, intensity * 1.1, 0.009, dest);
+    const src = ac.createBufferSource(); src.buffer = noise;
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = P.crack.body; lp.Q.value = 2;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(intensity * 1.4, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    src.connect(lp); lp.connect(g); g.connect(dest);
+    src.start(t, Math.random(), 0.1);
+  }
+
+  // a fracture running through the shell: one snap, then crackles that thin out
+  // as the crack travels (gaps grow, a few loud ticks among many quiet ones)
+  function crackle(count, intensity, pan, delay = 0, withSnap = false) {
     if (!ac || count <= 0) return;
     const c = P.crack, dest = out(pan);
     let t = ac.currentTime + 0.005 + delay;
+    if (withSnap) { snap(t, intensity, dest); t += 0.006; }
+    let gap = c.gap * 0.35;
     for (let i = 0; i < count; i++) {
-      // clusters: mostly tight gaps with occasional pauses
-      const gap = c.gap * (Math.random() < 0.15 ? 4 + Math.random() * 5 : 0.3 + Math.random() * 1.4);
-      t += gap;
-      const g = intensity * c.gain * (0.25 + Math.random() * 0.75);
+      t += gap * (0.4 + Math.random() * 1.2) + (Math.random() < 0.08 ? c.gap * 4 : 0);
+      gap *= 1.07;
+      const fade = 1 - (i / count) * 0.65;
+      let g = intensity * c.gain * fade * (0.12 + 0.88 * Math.pow(Math.random(), 2.2));
+      if (Math.random() < 0.1) g *= 1.8;
       tick(t, c.fLo + Math.random() * (c.fHi - c.fLo), c.q, g, c.dur * (0.6 + Math.random() * 0.9), dest);
-      if (Math.random() < c.pop) tick(t, c.popF * (0.7 + Math.random() * 0.6), 2, g * 1.4, c.dur * 4, dest);
+      if (Math.random() < c.pop) tick(t + 0.001, c.popF * (0.7 + Math.random() * 0.6), 1.5, g * 1.5, c.dur * 4, dest);
     }
   }
 
@@ -314,7 +337,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   resize();
 
   // ---------- Shell state ----------
-  let integrity = 1, cracks = [], crunches = 0, shattered = false;
+  let integrity = 1, cracks = [], facets = [], chips = [], crunches = 0, shattered = false;
   const particles = [];
 
   // ---------- Interaction ----------
@@ -323,26 +346,106 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   function toLocal(x, y) { return [(x - cx) / (R * sx), (y - cy) / (R * sy)]; }
   function panOf(x) { return ((x - cx) / (W / 2)) * 0.8; }
 
-  function growCrack(x, y, a, steps, gen, hits) {
-    for (let s = 0; s < steps; s++) {
-      const L = 0.025 + Math.random() * 0.06;
-      a += (Math.random() - 0.5) * 0.9;
-      const nx = x + Math.cos(a) * L, ny = y + Math.sin(a) * L;
-      if (nx * nx + ny * ny > 1.08) break;
-      const w = gen === 0 ? (Math.random() < 0.35 ? 2.4 : 1.7) : 1;
-      cracks.push({ x1: x, y1: y, x2: nx, y2: ny, w });
+  // Crack widths are bucketed so drawing can batch them.
+  const WB = [0.5, 0.8, 1.2, 1.7, 2.3];
+  const bucket = w => WB.reduce((b, v) => Math.abs(v - w) < Math.abs(b - w) ? v : b, WB[0]);
+  const TAU = Math.PI * 2;
+  const inside = (x, y) => x * x + y * y < 1.0;
+
+  function seg(x1, y1, x2, y2, w) { cracks.push({ x1, y1, x2, y2, w: bucket(w) }); }
+
+  // A mostly straight crack with small kinks that tapers to a hairline tip.
+  function runCrack(x, y, ang, len, w0, hits, depth) {
+    const pts = [[x, y]];
+    let d = 0;
+    while (d < len) {
+      const L = 0.03 + Math.random() * 0.035;
+      ang += (Math.random() - 0.5) * 0.32;
+      const nx = x + Math.cos(ang) * L, ny = y + Math.sin(ang) * L;
+      if (!inside(nx, ny)) break;
+      const taper = 1 - d / len;
+      seg(x, y, nx, ny, 0.5 + (w0 - 0.5) * taper);
       hits.push([nx, ny]);
-      x = nx; y = ny;
-      if (gen < 2 && Math.random() < 0.22) growCrack(x, y, a + (Math.random() < 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.8), Math.max(1, (steps - s) >> 1), gen + 1, hits);
+      x = nx; y = ny; d += L; pts.push([x, y]);
+      // side branches fork off at 25-50 degrees and stay thinner
+      if (depth < 1 && d > 0.1 && Math.random() < 0.07) {
+        const side = Math.random() < 0.5 ? 1 : -1;
+        runCrack(x, y, ang + side * (0.45 + Math.random() * 0.45), (len - d) * (0.35 + Math.random() * 0.4), Math.max(0.6, w0 * taper * 0.6), hits, depth + 1);
+      }
+    }
+    return pts;
+  }
+  const along = (pts, f) => pts.length > 2 ? pts[Math.min(pts.length - 1, Math.max(1, Math.round(f * (pts.length - 1))))] : null;
+
+  // A jagged connecting crack between two points (the rings of a spiderweb fracture).
+  function jag(a, b, w, hits) {
+    const n = 3, dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len, py = dx / len;
+    let prev = a;
+    for (let i = 1; i <= n; i++) {
+      const k = i / n, j = i < n ? (Math.random() - 0.5) * len * 0.25 : 0;
+      const p = [a[0] + dx * k + px * j, a[1] + dy * k + py * j];
+      seg(prev[0], prev[1], p[0], p[1], w); hits.push(p); prev = p;
     }
   }
-  function addCracks(lx, ly, power) {
+
+  // Impact fracture: radial cracks from the press point, joined by 1-2 rings,
+  // with the shard facets between them catching the light differently.
+  function impactCrack(lx, ly, power) {
     if (integrity <= 0) return [];
-    const hits = [];
-    const branches = 1 + Math.round(Math.random() * 2 + power * 2);
-    for (let b = 0; b < branches; b++) growCrack(lx, ly, Math.random() * Math.PI * 2, 2 + Math.round(Math.random() * 5 * power + 1), 0, hits);
-    if (cracks.length > 1800) cracks.splice(0, cracks.length - 1800);
+    const hits = [[lx, ly]];
+    const n = 4 + Math.round(Math.random() * 2 + power * 2);
+    const base = Math.random() * TAU;
+    const radials = [];
+    for (let i = 0; i < n; i++) {
+      const a = base + (i / n) * TAU + (Math.random() - 0.5) * (TAU / n) * 0.55;
+      const len = (0.22 + power * 0.32) * (0.55 + Math.random() * 0.7);
+      radials.push(runCrack(lx, ly, a, len, 1.4 + power * 0.9, hits, 0));
+    }
+    const rings = power > 0.75 ? [0.35, 0.75] : [0.45 + Math.random() * 0.2];
+    const ringPts = rings.map(f => radials.map(r => along(r, f)));
+    ringPts.forEach((ring, k) => {
+      for (let i = 0; i < n; i++) {
+        const a = ring[i], b = ring[(i + 1) % n];
+        if (a && b && Math.random() < 0.8) jag(a, b, k === 0 ? 0.9 : 0.6, hits);
+      }
+    });
+    // facets: wedges between neighbouring radials
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const a1 = ringPts[0][i], b1 = ringPts[0][j];
+      if (a1 && b1) facets.push({ pts: [[lx, ly], a1, b1], s: (Math.random() - 0.5) * 0.5 });
+      if (ringPts[1]) {
+        const a2 = ringPts[1][i], b2 = ringPts[1][j];
+        if (a1 && b1 && a2 && b2) facets.push({ pts: [a1, a2, b2, b1], s: (Math.random() - 0.5) * 0.42 });
+      }
+    }
+    // crushed centre: a small chip where the shell flaked off
+    if (Math.random() < 0.35 + power * 0.4) {
+      const r = 0.025 + Math.random() * 0.035 * power, pts = [];
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU + Math.random() * 0.6; const rr = r * (0.6 + Math.random() * 0.6); pts.push([lx + Math.cos(a) * rr, ly + Math.sin(a) * rr]); }
+      chips.push(pts);
+    }
+    trimCracks();
     return hits;
+  }
+
+  // Dragging drags a single crack along behind the finger, with small forks.
+  function dragCrack(ax, ay, bx, by) {
+    if (integrity <= 0 || !inside(ax, ay) || !inside(bx, by)) return [];
+    const hits = [];
+    jag([ax, ay], [bx, by], 1.2, hits);
+    if (Math.random() < 0.35) {
+      const ang = Math.atan2(by - ay, bx - ax) + (Math.random() < 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.5);
+      runCrack(bx, by, ang, 0.05 + Math.random() * 0.1, 0.8, hits, 2);
+    }
+    trimCracks();
+    return hits;
+  }
+  function trimCracks() {
+    if (cracks.length > 2600) cracks.splice(0, cracks.length - 2600);
+    if (facets.length > 500) facets.splice(0, facets.length - 500);
+    if (chips.length > 120) chips.splice(0, chips.length - 120);
   }
 
   function spawnCrumbs(hits, n) {
@@ -383,10 +486,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     Object.assign(press, { on: true, virtual, x, y, lastX: x, lastY: y, moved: 0 });
     canvas.classList.add("pressing");
     hint.classList.add("gone");
-    const power = 0.6 + Math.random() * 0.6;
-    const hits = addCracks(lx, ly, power);
+    const power = 0.5 + Math.random() * 0.5;
+    const hits = impactCrack(lx, ly, power);
+    press.lx = lx; press.ly = ly;
     const shellAmt = Math.min(1, integrity * 1.4);
-    crackle(Math.round((8 + hits.length * 1.3) * (0.25 + shellAmt)), 0.35 + 0.65 * shellAmt, panOf(x));
+    crackle(Math.round((10 + hits.length * 0.9) * (0.25 + shellAmt)), 0.45 + 0.55 * shellAmt, panOf(x), 0, integrity > 0);
     squish(0.5 + 0.5 * (1 - shellAmt), panOf(x));
     spawnCrumbs(hits, integrity > 0 ? 10 : 0);
     if (integrity > 0) { crunches++; buzz([12, 18, 8, 25, 10]); } else buzz(15);
@@ -402,9 +506,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       press.moved -= 16;
       const [lx, ly] = toLocal(x, y);
       if (lx * lx + ly * ly > 1.2) continue;
-      const hits = addCracks(lx, ly, 0.25);
+      const hits = dragCrack(press.lx, press.ly, lx, ly);
+      press.lx = lx; press.ly = ly;
       const shellAmt = Math.min(1, integrity * 1.4);
-      crackle(Math.round((3 + hits.length) * (0.2 + shellAmt)), 0.25 + 0.5 * shellAmt, panOf(x));
+      crackle(Math.round((4 + hits.length * 1.5) * (0.2 + shellAmt)), 0.35 + 0.55 * shellAmt, panOf(x));
       if (Math.random() < 0.25) squish(0.25, panOf(x));
       spawnCrumbs(hits, integrity > 0 ? 3 : 0);
       if (integrity > 0) buzz(6);
@@ -470,7 +575,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   // ---------- Controls ----------
   function recoat() {
     initAudio();
-    integrity = 1; cracks = []; shattered = false;
+    integrity = 1; cracks = []; facets = []; chips = []; shattered = false;
     gloss = 1;
     pour();
     squashV -= 1.5;
@@ -585,18 +690,36 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       sgr.addColorStop(0, hexA(P.shell, 0.42 * shellA));
       sgr.addColorStop(1, hexA(P.shell, 0.12 * shellA));
       ctx.fillStyle = sgr; ctx.fillRect(-1.6, -1.6, 3.2, 3.2);
-      // cracks: shadow pass then light pass, batched by width
+      // shard facets: each broken piece sits at a slightly different angle
+      for (const f of facets) {
+        ctx.fillStyle = f.s > 0 ? `rgba(255,255,255,${f.s * shellA})` : hexA(P.crackDark, -f.s * 0.5 * shellA);
+        ctx.beginPath(); ctx.moveTo(f.pts[0][0], f.pts[0][1]);
+        for (let k = 1; k < f.pts.length; k++) ctx.lineTo(f.pts[k][0], f.pts[k][1]);
+        ctx.closePath(); ctx.fill();
+      }
+      // chips: shell flaked away, showing the darker jelly beneath with a bright broken edge
       const lw = 1 / R;
+      for (const c of chips) {
+        ctx.beginPath(); ctx.moveTo(c[0][0], c[0][1]);
+        for (let k = 1; k < c.length; k++) ctx.lineTo(c[k][0], c[k][1]);
+        ctx.closePath();
+        ctx.fillStyle = hexA(P.dark, 0.45 * shellA); ctx.fill();
+        ctx.strokeStyle = `rgba(255,255,255,${0.8 * shellA})`; ctx.lineWidth = 1.2 * lw; ctx.stroke();
+      }
+      // cracks, batched by width: frosted stress halo, dark fracture line, then a
+      // thin offset glint where light catches the broken edge
       ctx.lineCap = "round"; ctx.lineJoin = "round";
-      for (const pass of [0, 1]) {
-        for (const w of [1, 1.7, 2.4]) {
+      const passes = [
+        { o: 0, mul: 3.4, col: `rgba(255,255,255,${0.16 * shellA})` },
+        { o: 0, mul: 1.15, col: hexA(P.crackDark, 0.95 * shellA) },
+        { o: -0.9 * lw, mul: 0.55, col: hexA(P.crackLight, 0.95 * shellA) }
+      ];
+      for (const ps of passes) {
+        ctx.strokeStyle = ps.col;
+        for (const w of WB) {
           ctx.beginPath();
-          for (const c of cracks) if (c.w === w) {
-            const o = pass === 0 ? 0.9 * lw : 0;
-            ctx.moveTo(c.x1 + o, c.y1 + o); ctx.lineTo(c.x2 + o, c.y2 + o);
-          }
-          ctx.strokeStyle = pass === 0 ? hexA(P.crackDark, 0.55 * shellA) : hexA(P.crackLight, 0.95 * shellA);
-          ctx.lineWidth = (pass === 0 ? w * 1.9 : w) * lw;
+          for (const c of cracks) if (c.w === w) { ctx.moveTo(c.x1 + ps.o, c.y1 + ps.o); ctx.lineTo(c.x2 + ps.o, c.y2 + ps.o); }
+          ctx.lineWidth = Math.max(0.6, w * ps.mul) * lw;
           ctx.stroke();
         }
       }
