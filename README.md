@@ -22,20 +22,22 @@ Peach, Cloud, Honey (cube), Mint Ice, Strawberry (with seeds), Lemon Star (star 
 
 # CE Graphing Calculator
 
-`calculator.html` is a color graphing calculator that runs in the browser, laid out like the CE-style handhelds students use. Open it in any browser and click the keys or type on your keyboard.
+`calculator.html` is a color graphing calculator that runs in the browser and works like a CE-style handheld. Open it in any browser and click the keys or type on your keyboard. It runs in Classic display mode (no MathPrint templates).
 
-- **Home screen:** TI-style order of operations, implied multiplication, `(−)` negation, `Ans`, `2nd ENTRY`, `STO→` into A–Z/θ, `►Frac`, and error screens with Quit/Goto
-- **Y= editor:** 10 colored functions, toggle each one on or off by pressing ENTER on its `=` sign
-- **Graph:** WINDOW, FORMAT (grid, axes, labels, coordinates), ZOOM (box, in/out, decimal, square, standard, trig, integer, fit, previous), free cursor and TRACE
-- **CALC:** value, zero, minimum, maximum, intersect, dy/dx and ∫f(x)dx with shading
-- **TABLE** with TBLSET
-- **Lists L1–L6:** list editor (STAT → Edit), `{1,2,3}→L1`, list math like `L1×2` or `sin(L1)`, `L1(3)` element access
-- **STAT:** SortA/SortD, ClrList, 1-Var Stats, 2-Var Stats, LinReg(ax+b), LinReg(a+bx), QuadReg, CubicReg, QuartReg, LnReg, ExpReg, PwrReg (add `,Y1` to store the equation for graphing)
-- **LIST menu (2nd STAT):** dim, Fill, seq, cumSum, ΔList, augment, min, max, mean, median, sum, prod, stdDev, variance
-- **STAT PLOT (2nd Y=):** scatter, xyLine, histogram and box plot, plus ZoomStat
-- **Menus:** MATH/NUM/PROB, TEST/LOGIC, ANGLE, DISTR (normal, binomial, Poisson, geometric), VARS/Y-VARS, CATALOG
-- **MODE:** Normal/Sci/Eng, Float/Fix 0–9, Radian/Degree, line style
+- **Home screen:** TI order of operations, implied multiplication, `Ans`, `2nd ENTRY`, `STO→`, `►Frac`, `►Dec`, `►DMS`, error screens with Quit/Goto
+- **MODE:** Normal/Sci/Eng, Float/Fix 0–9, Radian/Degree, FUNC/PAR/POL/SEQ, line style, Real/a+bi/re^θi
+- **Graphing:** Y= editor for all four modes (Y1–Y0, X/Y pairs, r1–r6, u/v/w sequences), WINDOW, FORMAT, every ZOOM option, TRACE, CALC (value, zero, min, max, intersect, dy/dx, ∫f(x)dx, plus dy/dt, dx/dt and dr/dθ), TABLE
+- **DRAW:** ClrDraw, Line, Horizontal, Vertical, Tangent, DrawF, Shade, DrawInv, Circle, Text, Pt-On/Off/Change, Pxl-On/Off/Change
+- **Lists and STAT:** list editor, list math, 1/2-Var Stats, every regression (can store into Y=), Med-Med, all 17 STAT TESTS with Calculate and Draw, ANOVA, STAT PLOT (scatter, xyLine, histogram, box, modified box, normal probability), ZoomStat
+- **DISTR:** normal, t, χ², F, binomial, Poisson, geometric (pdf/cdf/inverse)
+- **Matrices:** [A]–[J], matrix editor, det, inverse, transpose, rref/ref, row operations, identity, randM, augment, Matr►list, List►matr
+- **Complex numbers:** i, a+bi and polar display, conj, real, imag, angle, abs
+- **Strings:** Str0–Str9, sub, length, inString, expr, toString
+- **PRGM:** program editor and TI-BASIC interpreter (If/Then/Else, For, While, Repeat, Lbl/Goto, Menu, Input, Prompt, Disp, Output, Pause, getKey, ClrHome, DispGraph, subprograms, ON to break)
+- **Solver** (ALPHA+ENTER or MATH → Solver…)
+- **APPS:** Finance (TVM Solver, tvm_ functions, npv, irr, ►Nom, ►Eff), Poly Root Finder, Simult Eqn Solver
+- **CATALOG** (2nd 0) with every command
 - **Keyboard:** digits and operators type, Enter, Backspace, Esc = CLEAR, arrows, F1–F5 = Y= WINDOW ZOOM TRACE GRAPH
-- Functions, window, variables and settings are saved in your browser
+- Everything you enter (functions, lists, matrices, programs, settings) is saved in your browser
 
-Not included: STAT TESTS, Med-Med, matrices, programs, complex numbers, and parametric/polar graphing.
+Not included: MathPrint templates and stacked fractions, linking to another calculator, Pic/GDB storage, the other preloaded apps (CabriJr, CelSheet, Conics and so on), and USB/exam-mode features.

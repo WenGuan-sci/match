@@ -260,7 +260,7 @@ function toFrac(v) {
    ================================================================= */
 const POSTFIX = new Set(['²', '³', '⁻¹', '!', '°', 'ʳ', 'ᵀ']);
 const STATVARS = { 'x̄': 1, 'Σx': 1, 'Σx²': 1, 'Sx': 1, 'σx': 1, 'n ': 1, 'minX': 1, 'maxX': 1, 'Q1': 1, 'Med': 1, 'Q3': 1, 'ȳ': 1, 'Σy': 1, 'Σy²': 1, 'Σxy': 1, 'Sy': 1, 'σy': 1, 'minY': 1, 'maxY': 1, 'a': 1, 'b': 1, 'c': 1, 'd': 1, 'e ': 1, 'r': 1, 'r²': 1, 'R²': 1 };
-const CONSTS = new Set(['π', 'e', 'rand', 'Ans', 'i', 'getKey', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
+const CONSTS = new Set(['π', 'e', 'rand', 'Ans', 'i', 'getKey', 'tvm_Pmt', 'tvm_I%', 'tvm_PV', 'tvm_N', 'tvm_FV', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
 const RELOPS = new Set(['=', '≠', '>', '≥', '<', '≤']);
 const isY = t => /^Y[0-9]$/.test(t);
 const isVar = t => (t.length === 1 && LETTERS.includes(t)) || t === 'n';
@@ -687,6 +687,7 @@ function constVal(v) {
     case 'rand': return Math.random();
     case 'Ans': return Array.isArray(S.ans) ? S.ans.slice() : S.ans;
     case 'i': return new C(0, 1);
+    case 'tvm_Pmt': case 'tvm_I%': case 'tvm_PV': case 'tvm_N': case 'tvm_FV': return finFn(v);
     case 'getKey': { const k = S.run ? S.run.lastKey : 0; if (S.run) S.run.lastKey = 0; return k; }
   }
   if (v in STATVARS) { const x = S.statVars[v]; if (x === undefined) err('UNDEFINED'); return x; }
@@ -931,6 +932,8 @@ function listFn(name, a) {
     case 'stdDev(': need(a, 1, 2); return Math.sqrt(sampleVar(withFreq(listArg(a[0]), a[1])));
     case 'variance(': need(a, 1, 2); return sampleVar(withFreq(listArg(a[0]), a[1]));
     case 'dim(': need(a, 1); if (!Array.isArray(a[0])) err('DATA TYPE'); return a[0].length;
+    case 'npv(': need(a, 3, 4); return npv(num(a[0]), num(a[1]), listArg(a[2]), a[3]);
+    case 'irr(': { need(a, 2, 3); const cf0 = num(a[0]), L = listArg(a[1]), fq = a[2]; return findRoot(r => npv(r, cf0, L, fq), -99.9, 1000, 10); }
     case 'cumSum(': { need(a, 1); let s = 0; return listArg(a[0]).map(x => (s += x)); }
     case 'ΔList(': { need(a, 1); const l = listArg(a[0]); if (l.length < 2) err('INVALID DIM'); return l.slice(1).map((x, i) => x - l[i]); }
     case 'augment(': { need(a, 2); if (!Array.isArray(a[0]) || !Array.isArray(a[1])) err('DATA TYPE'); const r = a[0].concat(a[1]); if (r.length > 999) err('INVALID DIM'); return r; }
@@ -978,6 +981,8 @@ function scalarFn(name, a) {
     case 'remainder(': need(a, 2); if (a[1] === 0) err('DIVIDE BY 0'); return a[0] - a[1] * Math.floor(a[0] / a[1]);
     case 'randInt(': { need(a, 2); if (!isInt(a[0]) || !isInt(a[1])) err('DOMAIN'); const lo = Math.min(a[0], a[1]), hi = Math.max(a[0], a[1]); return Math.round(lo) + Math.floor(Math.random() * (Math.round(hi) - Math.round(lo) + 1)); }
     case 'not(': one(); return x === 0 ? 1 : 0;
+    case '►Nom(': need(a, 2); return 100 * a[1] * (Math.pow(1 + a[0] / 100, 1 / a[1]) - 1);
+    case '►Eff(': need(a, 2); return 100 * (Math.pow(1 + a[0] / 100 / a[1], a[1]) - 1);
     case 'R►Pr(': need(a, 2); return Math.hypot(a[0], a[1]);
     case 'R►Pθ(': need(a, 2); return fromR(Math.atan2(a[1], a[0]));
     case 'P►Rx(': need(a, 2); return snap(a[0] * Math.cos(toR(a[1])));
@@ -2307,12 +2312,21 @@ function drawPlots(c) {
         c.globalAlpha = 0.25; c.fillRect(a, top, b - a, y0 - top); c.globalAlpha = 1;
         c.strokeRect(Math.round(a) + 0.5, Math.round(top) + 0.5, Math.round(b - a), Math.round(y0 - top));
       }
+    } else if (p.type === 5 && xs.length) {
+      const s = sortNum(xs), n = s.length;
+      s.forEach((x, k) => plotMark(c, xToPx(x), yToPy(invNorm((k + 0.5) / n)), p.mark));
     } else if (xs.length) {
       const s = sortNum(xs), [q1, med, q3] = quart(s), q1v = Number.isFinite(q1) ? q1 : s[0], q3v = Number.isFinite(q3) ? q3 : s[0];
       const yc = SB + 26 + j * 40, hh = 11;
       const P = xToPx;
-      c.beginPath(); c.moveTo(P(s[0]), yc); c.lineTo(P(q1v), yc); c.moveTo(P(q3v), yc); c.lineTo(P(s[s.length - 1]), yc);
-      c.moveTo(P(s[0]), yc - 5); c.lineTo(P(s[0]), yc + 5); c.moveTo(P(s[s.length - 1]), yc - 5); c.lineTo(P(s[s.length - 1]), yc + 5); c.stroke();
+      let lo = s[0], hi = s[s.length - 1];
+      if (p.type === 4) {
+        const iqr = q3v - q1v, f1 = q1v - 1.5 * iqr, f2 = q3v + 1.5 * iqr;
+        lo = s.find(x => x >= f1); hi = [...s].reverse().find(x => x <= f2);
+        s.filter(x => x < f1 || x > f2).forEach(x => plotMark(c, P(x), yc, p.mark));
+      }
+      c.beginPath(); c.moveTo(P(lo), yc); c.lineTo(P(q1v), yc); c.moveTo(P(q3v), yc); c.lineTo(P(hi), yc);
+      c.moveTo(P(lo), yc - 5); c.lineTo(P(lo), yc + 5); c.moveTo(P(hi), yc - 5); c.lineTo(P(hi), yc + 5); c.stroke();
       c.globalAlpha = 0.2; c.fillRect(P(q1v), yc - hh, P(q3v) - P(q1v), hh * 2); c.globalAlpha = 1;
       c.strokeRect(P(q1v), yc - hh, P(q3v) - P(q1v), hh * 2);
       c.beginPath(); c.moveTo(P(med), yc - hh); c.lineTo(P(med), yc + hh); c.stroke();
@@ -2338,6 +2352,7 @@ function zoomStat() {
     xmin = Math.min(xmin, ...xs); xmax = Math.max(xmax, ...xs);
     if (p.type <= 1) { const ys = S.lists[p.y].slice(0, xs.length); if (ys.length) { ymin = Math.min(ymin, ...ys); ymax = Math.max(ymax, ...ys); } }
     if (p.type === 2) { hist = true; nTot = Math.max(nTot, xs.length); }
+    if (p.type === 5) { const z = invNorm((xs.length - 0.5) / xs.length) * 1.15; ymin = Math.min(ymin, -z); ymax = Math.max(ymax, z); }
   }
   const o = {};
   if (hist) {
@@ -2391,6 +2406,7 @@ function draw() {
     case 'ledit': drawLedit(); break;
     case 'medit': drawMedit(); break;
     case 'pedit': drawPedit(); break;
+    case 'appform': drawAppForm(); break;
     case 'pnew': drawPnew(); break;
     case 'prun': drawPrun(); break;
     case 'solver': drawSolver(); break;
@@ -2743,6 +2759,132 @@ function drawSolver() {
   drawStr('ALPHA+ENTER = SOLVE', ROWS - 1, 0, { color: '#8a909a' });
 }
 
+
+/* =================================================================
+   APPS: Finance (TVM), polynomial roots, simultaneous equations
+   ================================================================= */
+function tvmRate(T) { return Math.pow(1 + T.I / 100 / T.CY, T.CY / T.PY) - 1; }
+function tvmF(T) {
+  const i = tvmRate(T), G = T.begin ? 1 : 0;
+  if (Math.abs(i) < 1e-15) return T.PV + T.PMT * T.N + T.FV;
+  const g = Math.pow(1 + i, T.N);
+  return T.PV * g + T.PMT * (1 + i * G) / i * (g - 1) + T.FV;
+}
+function tvmSolve(T, key) {
+  if (!(T.PY > 0) || !(T.CY > 0)) err('DOMAIN');
+  const f = x => { const c = { ...T, [key]: x }; return tvmF(c); };
+  if (key === 'PV' || key === 'PMT' || key === 'FV') {
+    const a = f(0), b = f(1); if (a === b) err('NO SIGN CHNG'); return -a / (b - a);
+  }
+  const guess = key === 'I' ? 5 : 10;
+  const lo = key === 'I' ? -99.99 : 1e-9, hi = key === 'I' ? 1e4 : 1e5;
+  return findRoot(f, lo, hi, guess);
+}
+const FIN = { N: 0, I: 0, PV: 0, PMT: 0, FV: 0, PY: 12, CY: 12, begin: 0 };
+function finFn(name, a) {
+  switch (name) {
+    case 'tvm_Pmt': case 'tvm_I%': case 'tvm_PV': case 'tvm_N': case 'tvm_FV': {
+      const key = { 'tvm_Pmt': 'PMT', 'tvm_I%': 'I', 'tvm_PV': 'PV', 'tvm_N': 'N', 'tvm_FV': 'FV' }[name];
+      return tvmSolve(FIN, key);
+    }
+  }
+  return undefined;
+}
+function npv(rate, cf0, list, freq) {
+  const r = rate / 100; let t = 0, s = cf0;
+  list.forEach((c, k) => { const n = freq ? freq[k] : 1; for (let j = 0; j < n; j++) { t++; s += c / Math.pow(1 + r, t); } });
+  return s;
+}
+// generic numeric form used by the apps
+function openAppForm(def) { closeGraphState(); S.af = { ...def, sel: 0, ed: null, scroll: 0 }; S.screen = 'appform'; }
+function afRows() { return typeof S.af.rows === 'function' ? S.af.rows() : S.af.rows; }
+function afCommit() {
+  const A = S.af, r = afRows()[A.sel];
+  if (!A.ed) return true;
+  if (!A.ed.t.length) { A.ed = null; return true; }
+  try { const v = evalTokens(A.ed.t); r.set(v); A.ed = null; return true; }
+  catch (e) { if (!(e instanceof CalcError)) throw e; const keep = A.ed.t.slice(); showError(e.type, () => { S.screen = 'appform'; A.ed = new Ed(keep); }); return false; }
+}
+function drawAppForm() {
+  const A = S.af, rows = afRows(), vis = ROWS - 2;
+  if (A.sel >= rows.length) A.sel = rows.length - 1;
+  if (A.sel < A.scroll) A.scroll = A.sel; if (A.sel >= A.scroll + vis) A.scroll = A.sel - vis + 1;
+  drawStr(A.title, 0, 0, { color: '#2b4f8a' });
+  for (let k = 0; k < vis; k++) {
+    const i = A.scroll + k, r = rows[i]; if (!r) break;
+    const row = k + 1, here = i === A.sel;
+    drawStr(r.label, row, 0); let c = cells(r.label).length;
+    if (r.opts) { c++; r.opts.forEach((o, j) => { drawStr(o, row, c, j === r.get() ? (here ? { bg: '#111' } : { bg: '#2b6cc4' }) : {}); c += cells(o).length + 1; }); continue; }
+    if (r.act) { drawStr(r.act, row, 0, here ? { bg: '#111' } : { color: '#2b4f8a' }); continue; }
+    if (here && A.ed) { const ch = cells(A.ed.str()); drawStr(ch.join(''), row, c); drawCursor(row, c + A.ed.curChar(), ch[A.ed.c]); }
+    else drawStr(fmtNum(r.get()), row, c, here && S.blink ? { bg: '#111' } : {});
+  }
+  if (A.hint) drawStr(A.hint, ROWS - 1, 0, { color: '#8a909a' });
+}
+function openTVM() {
+  openAppForm({
+    title: 'TVM Solver', hint: 'ALPHA+ENTER solves the row',
+    rows: [['N', 'N='], ['I', 'I%='], ['PV', 'PV='], ['PMT', 'PMT='], ['FV', 'FV='], ['PY', 'P/Y='], ['CY', 'C/Y=']].map(([k, l]) => ({ label: l, key: k, get: () => FIN[k], set: v => { FIN[k] = v; if (k === 'PY') FIN.CY = v; } }))
+      .concat([{ label: 'PMT:', opts: ['END', 'BEGIN'], get: () => FIN.begin, set: v => { FIN.begin = v; } }]),
+    solve(r) { if (!r.key || r.key === 'PY' || r.key === 'CY') return; FIN[r.key] = tvmSolve(FIN, r.key); },
+  });
+}
+function openPoly() {
+  const P = S.poly = S.poly || { deg: 2, c: Array(11).fill(0) };
+  openAppForm({
+    title: 'POLY ROOT FINDER', hint: 'ALPHA+ENTER = SOLVE',
+    rows: () => [{ label: 'Order:', opts: ['2', '3', '4', '5', '6'], get: () => P.deg - 2, set: v => { P.deg = v + 2; } }]
+      .concat(Array.from({ length: P.deg + 1 }, (_, k) => ({ label: 'a' + (P.deg - k) + '=', get: () => P.c[k], set: v => { P.c[k] = v; } })))
+      .concat([{ act: 'SOLVE', label: '' }]),
+    solve() {
+      const co = P.c.slice(0, P.deg + 1);
+      if (co[0] === 0) err('DOMAIN');
+      const roots = polyRoots(co);
+      S.stat = { title: 'POLY ROOTS', lines: roots.map((z, k) => 'x' + (k + 1) + '=' + showVal(z)), scroll: 0, back: 'appform' };
+      S.screen = 'stat';
+    },
+  });
+}
+function polyRoots(co) {
+  const n = co.length - 1, a = co.map(c => c / co[0]);
+  let z = Array.from({ length: n }, (_, k) => cpowRaw(new C(0.4, 0.9), k));
+  const evalP = x => { let r = new C(1, 0); for (let k = 1; k <= n; k++) r = cmulAdd(r, x, a[k]); return r; };
+  for (let it = 0; it < 800; it++) {
+    let delta = 0;
+    z = z.map((zi, i) => {
+      let den = new C(1, 0);
+      z.forEach((zj, j) => { if (i !== j) den = cmulC(den, new C(zi.re - zj.re, zi.im - zj.im)); });
+      const q = toC(cdiv(evalP(zi), den));
+      delta = Math.max(delta, Math.hypot(q.re, q.im));
+      return new C(zi.re - q.re, zi.im - q.im);
+    });
+    if (delta < 1e-15) break;
+  }
+  return z.map(r => { const re = Math.abs(r.re) < 1e-11 ? 0 : r.re, im = Math.abs(r.im) < 1e-9 * Math.max(1, Math.abs(r.re)) ? 0 : r.im; return im === 0 ? re : new C(re, im); })
+    .sort((p, q) => (typeof p === 'number' ? p : p.re) - (typeof q === 'number' ? q : q.re));
+}
+function cpowRaw(z, k) { let r = new C(1, 0); for (let j = 0; j < k; j++) r = cmulC(r, z); return r; }
+function cmulAdd(r, x, c) { const m = cmulC(r, x); return new C(m.re + c, m.im); }
+function openSimult() {
+  const Q = S.simul = S.simul || { n: 2, m: Array.from({ length: 6 }, () => Array(7).fill(0)) };
+  openAppForm({
+    title: 'SIMULT EQN SOLVER', hint: 'aᵢⱼ x = bᵢ   ALPHA+ENTER',
+    rows: () => [{ label: 'Equations:', opts: ['2', '3', '4', '5', '6'], get: () => Q.n - 2, set: v => { Q.n = v + 2; } }]
+      .concat(Array.from({ length: Q.n }, (_, i) => Array.from({ length: Q.n + 1 }, (_, j) => ({ label: (j < Q.n ? 'a' + (i + 1) + (j + 1) : 'b' + (i + 1)) + '=', get: () => Q.m[i][j], set: v => { Q.m[i][j] = v; } }))).flat())
+      .concat([{ act: 'SOLVE', label: '' }]),
+    solve() {
+      const n = Q.n, R = rowReduce(Q.m.slice(0, n).map(r => r.slice(0, n + 1)), n, true);
+      let lines;
+      const rank = R.filter(r => r.slice(0, n).some(x => x !== 0)).length;
+      if (R.some(r => r.slice(0, n).every(x => x === 0) && r[n] !== 0)) lines = ['NO SOLUTION FOUND'];
+      else if (rank < n) lines = ['INFINITE SOLUTIONS', ...R.map((r, i) => 'rref row ' + (i + 1) + ': ' + showVal(r))];
+      else lines = R.map((r, i) => 'x' + (i + 1) + '=' + fmtNum(r[n]));
+      S.stat = { title: 'SOLUTION', lines, scroll: 0, back: 'appform' };
+      S.screen = 'stat';
+    },
+  });
+}
+
 /* =================================================================
    Screen openers
    ================================================================= */
@@ -2757,10 +2899,10 @@ function openPlotSetup(j) {
   const p = S.plots[j], lists = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'];
   const set = (k, after) => i => { p[k] = i; if (after) after(); S.graphDirty = true; };
   S.opts = {
-    kind: 'plot', title: 'Plot' + (j + 1), r: 0, c: 0, note: 'Then press GRAPH or ZOOM 9',
+    kind: 'plot', title: 'Plot' + (j + 1), r: 0, c: 0, get note() { return ['Scatter', 'xyLine', 'Histogram', 'Boxplot', 'ModBoxplot', 'NormProbPlot'][p.type] + ' · GRAPH or ZOOM 9'; },
     rows: [
       { opts: ['On', 'Off'], get: () => p.on ? 0 : 1, set: i => { p.on = i === 0; S.graphDirty = true; } },
-      { label: 'Type:', opts: ['Scat', 'xyLn', 'Hist', 'Box'], get: () => p.type, set: set('type') },
+      { label: 'Type:', opts: ['Sc', 'xy', 'Hi', 'Bx', 'MB', 'NP'], get: () => p.type, set: set('type') },
       { label: 'Xlist:', opts: lists, get: () => p.x, set: set('x') },
       { label: 'Ylist:', opts: lists, get: () => p.y, set: set('y') },
       { label: 'Mark:', opts: ['□', '+', '·'], get: () => p.mark, set: set('mark') },
@@ -3074,7 +3216,7 @@ const MENUS = {
   STATPLOT: () => ({ tabs: mkTabs([{ title: 'STAT PLOTS', items: [
     ...[0, 1, 2].map(j => {
       const p = S.plots[j];
-      const desc = p.on ? ['Scat', 'xyLn', 'Hist', 'Box'][p.type] + ' L' + (p.x + 1) + (p.type <= 1 ? ',L' + (p.y + 1) : '') : 'Off';
+      const desc = p.on ? ['Scat', 'xyLn', 'Hist', 'Box', 'MBox', 'NPP'][p.type] + ' L' + (p.x + 1) + (p.type <= 1 ? ',L' + (p.y + 1) : '') : 'Off';
       return { label: 'Plot' + (j + 1) + '…' + desc, act: () => openPlotSetup(j) };
     }),
     { label: 'PlotsOff', act: () => { S.plots.forEach(p => { p.on = false; }); S.graphDirty = true; goHome(); toast('All plots off'); } },
@@ -3093,6 +3235,14 @@ const MENUS = {
       { title: 'NEW', items: [{ label: 'Create New', act: newProgram }] },
     ]) };
   },
+  APPS: () => ({ home: true, tabs: mkTabs([{ title: 'APPLICATIONS', items: [
+    { label: 'Finance', act: () => openMenu(MENUS.FINANCE()) },
+    { label: 'Poly Root Finder', act: openPoly },
+    { label: 'Simult Eqn Solver', act: openSimult },
+  ] }]) }),
+  FINANCE: () => ({ tabs: mkTabs([{ title: 'CALC', items: [
+    { label: 'TVM Solver…', act: openTVM }, T('tvm_Pmt'), T('tvm_I%'), T('tvm_PV'), T('tvm_N'), T('tvm_FV'), T('npv('), T('irr('), T('►Nom('), T('►Eff('),
+  ] }]) }),
   DRAW: () => ({ home: true, tabs: mkTabs([
     { title: 'DRAW', items: [T('ClrDraw'), T('Line('), T('Horizontal ', 'Horizontal'), T('Vertical ', 'Vertical'), T('Tangent('), T('DrawF ', 'DrawF'), T('Shade('), T('DrawInv ', 'DrawInv'), T('Circle('), T('Text(')] },
     { title: 'POINTS', items: [T('Pt-On('), T('Pt-Off('), T('Pt-Change('), T('Pxl-On('), T('Pxl-Off('), T('Pxl-Change(')] },
@@ -3106,9 +3256,13 @@ const MENUS = {
   CATALOG: () => {
     const toks = ['abs(', ' and ', 'binomcdf(', 'binompdf(', 'cos(', 'cos⁻¹(', 'cosh(', 'cosh⁻¹(', 'e^(', 'fMax(', 'fMin(', 'fnInt(', 'fPart(', 'gcd(', 'geometcdf(', 'geometpdf(', 'int(', 'invNorm(', 'iPart(', 'lcm(', 'ln(', 'log(', 'logBASE(', 'max(', 'min(', 'nCr', 'nDeriv(', 'normalcdf(', 'normalpdf(', 'not(', 'nPr', ' or ', 'poissoncdf(', 'poissonpdf(', 'rand', 'randInt(', 'remainder(', 'round(', 'sin(', 'sin⁻¹(', 'sinh(', 'sinh⁻¹(', 'tan(', 'tan⁻¹(', 'tanh(', 'tanh⁻¹(', ' xor ', '►Dec', '►Frac', 'Σ(',
       'augment(', 'ClrList ', 'cumSum(', 'dim(', 'Fill(', 'mean(', 'median(', 'prod(', 'seq(', 'SortA(', 'SortD(', 'stdDev(', 'sum(', 'variance(', 'ΔList(',
-      '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', 'invT(', 'tpdf(', 'tcdf(', 'χ²pdf(', 'χ²cdf(', 'Fpdf(', 'Fcdf(', ...REGS];
+      '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', 'invT(', 'tpdf(', 'tcdf(', 'χ²pdf(', 'χ²cdf(', 'Fpdf(', 'Fcdf(', ...REGS,
+      'det(', 'identity(', 'randM(', 'rref(', 'ref(', 'rowSwap(', 'row+(', '*row(', '*row+(', 'Matr►list(', 'List►matr(', 'conj(', 'real(', 'imag(', 'angle(', '►Rect', '►Polar', '►DMS',
+      'R►Pr(', 'R►Pθ(', 'P►Rx(', 'P►Ry(', 'randNorm(', 'randBin(', 'sub(', 'length(', 'inString(', 'expr(', 'toString(', 'getKey', 'i',
+      ...DRAWCMDS, ...CTL.filter(t => t !== 'prgm'), ...IO.filter(t => t !== 'getKey'), 'tvm_Pmt', 'tvm_I%', 'tvm_PV', 'tvm_N', 'tvm_FV', 'npv(', 'irr(', '►Nom(', '►Eff('];
     const items = toks.map(t => { const tok = t === 'nCr' || t === 'nPr' ? ' ' + t + ' ' : t; return { label: t.trim(), act: menuInsert(tok) }; });
-    items.sort((a, b) => a.label.replace(/^[►Σ]/, 'zz').localeCompare(b.label.replace(/^[►Σ]/, 'zz'), 'en', { sensitivity: 'base' }));
+    const key = l => /^[A-Za-z]/.test(l) ? l : '~' + l;
+    items.sort((a, b) => key(a.label).localeCompare(key(b.label), 'en', { sensitivity: 'base' }));
     return { catalog: true, tabs: [{ title: 'CATALOG', items }] };
   },
 };
@@ -3137,6 +3291,7 @@ function editorFor(screen) {
   if (screen === 'ledit') return S.ledit.ed;
   if (screen === 'medit') return S.medit.ed;
   if (screen === 'pedit') return S.pedit.lines[S.pedit.row];
+  if (screen === 'appform') return S.af.ed;
   if (screen === 'pnew') return S.pnew.ed;
   if (screen === 'prun') return S.prun.input && S.prun.input.ed;
   if (screen === 'solver') return S.solver.stage === 0 ? S.solver.eq : S.solver.ed;
@@ -3154,6 +3309,7 @@ function insertTok(tok) {
   if (S.screen === 'medit' && !S.medit.ed) S.medit.ed = new Ed([]);
   if (S.screen === 'solver' && S.solver.stage === 1 && !S.solver.ed && solverRows()[S.solver.sel] !== 'bound') S.solver.ed = new Ed([]);
   if (S.screen === 'pnew' && !/^[A-Z0-9θ]$/.test(tok)) return;
+  if (S.screen === 'appform') { const r = afRows()[S.af.sel]; if (!r || r.opts || r.act) return; if (!S.af.ed) S.af.ed = new Ed([]); }
   if (S.screen === 'prun' && !(S.prun.input)) { if (S.run && S.run.active) return; goHome(); }
   const ed = editorFor(S.screen);
   if (!ed) return;
@@ -3449,6 +3605,32 @@ const HANDLERS = {
     }
     return false;
   },
+  appform(a) {
+    const A = S.af, rows = afRows(), r = rows[A.sel];
+    const doSolve = () => { if (!afCommit()) return; try { A.solve(r); } catch (e) { if (!(e instanceof CalcError)) throw e; showError(e.type, () => { S.screen = 'appform'; }); } };
+    if (A.ed) {
+      switch (a) {
+        case 'LEFT': A.ed.left(); return true;
+        case 'RIGHT': A.ed.right(); return true;
+        case 'CLEAR': if (A.ed.t.length) A.ed.clear(); else A.ed = null; return true;
+        case 'DEL': A.ed.del(); return true;
+        case 'BS': A.ed.bs(); return true;
+      }
+      if (a.startsWith('i:')) return false;
+    }
+    switch (a) {
+      case 'UP': if (afCommit() && A.sel > 0) A.sel--; return true;
+      case 'DOWN': if (afCommit() && A.sel < rows.length - 1) A.sel++; return true;
+      case 'ENTER': if (r && r.act) { doSolve(); return true; } if (afCommit() && A.sel < rows.length - 1) A.sel++; return true;
+      case 'LEFT': case 'RIGHT': if (r && r.opts) { const n = r.opts.length; r.set((r.get() + (a === 'LEFT' ? -1 : 1) + n) % n); } return true;
+      case 'SOLVE': doSolve(); return true;
+      case 'CLEAR': goHome(); return true;
+      case 'DEL': case 'BS': return true;
+    }
+    if (a.startsWith('i:')) return false;
+    if (!afCommit()) return true;
+    return false;
+  },
   pedit(a) {
     const P = S.pedit, L = P.lines, ed = L[P.row];
     switch (a) {
@@ -3608,7 +3790,7 @@ function doAction(a) {
     case 'TABLE': openTable(); return;
     case 'MODE': openOpts('mode'); return;
     case 'MATH': case 'TEST': case 'ANGLE': case 'DISTR': case 'VARS': case 'MEM': case 'CATALOG':
-    case 'STAT': case 'LIST': case 'STATPLOT': case 'MATRIX': case 'PRGM': case 'DRAW': openMenu(MENUS[a]()); return;
+    case 'STAT': case 'LIST': case 'STATPLOT': case 'MATRIX': case 'PRGM': case 'DRAW': case 'APPS': openMenu(MENUS[a]()); return;
     case 'SOLVE': openSolver(); return;
     case 'ON': goHome(); return;
     case 'OFF': S.off = true; S.second = S.alpha = S.alphaLock = false; return;
@@ -3635,7 +3817,7 @@ K('alpha', 'alpha', 'A-lock', '', null, null, null, 'alpha');
 K('xt', 'X,T,θ,<i>n</i>', 'link', '', 'XT', 'na:LINK', 'XT', 'sm');
 K('stat', 'stat', 'list', '', 'STAT', 'LIST', 'STAT', 'sm');
 K('math', 'math', 'test', 'A', 'MATH', 'TEST', 'i:A', 'sm');
-K('apps', 'apps', 'angle', 'B', 'na:APPS', 'ANGLE', 'i:B', 'sm');
+K('apps', 'apps', 'angle', 'B', 'APPS', 'ANGLE', 'i:B', 'sm');
 K('prgm', 'prgm', 'draw', 'C', 'PRGM', 'DRAW', 'i:C', 'sm');
 K('vars', 'vars', 'distr', '', 'VARS', 'DISTR', 'VARS', 'sm');
 K('clear', 'clear', '', '', 'CLEAR', 'CLEAR', 'CLEAR', 'sm');
@@ -3781,7 +3963,7 @@ load();
 buildKeys();
 fit();
 redraw();
-window.__calc = { press, doAction, S, runLine, fmtNum, TESTS, openTest, runTest, strTokens };
+window.__calc = { press, doAction, S, runLine, fmtNum, TESTS, openTest, runTest, strTokens, FIN, tvmSolve, polyRoots };
 })();
 </script>
 </body>
