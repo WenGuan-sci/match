@@ -165,7 +165,7 @@ const S = {
   plots: [0, 1, 2].map(() => ({ on: false, type: 0, x: 0, y: 1, mark: 0 })),
   ledit: { col: 0, fcol: 0, row: 0, off: 0, ed: null },
   stat: null,
-  mats: {}, statVars: {}, seqGen: 0,
+  mats: {}, statVars: {}, seqGen: 0, strs: {}, draws: [], progs: {},
   P: [0, 1, 2, 3, 4, 5].map(i => ({ x: new Ed([]), y: new Ed([]), on: true, color: COLORS[i] })),
   R: [0, 1, 2, 3, 4, 5].map(i => ({ ed: new Ed([]), on: true, color: COLORS[i] })),
   Q: ['u', 'v', 'w'].map((name, i) => ({ name, e: new Ed([]), init: new Ed([]), on: true, color: COLORS[i] })),
@@ -175,11 +175,12 @@ const PLOTC = ['#1a5fd8', '#d8232c', '#151515'];
 for (const L of LETTERS) S.vars[L] = 0;
 
 function save() {
+  if (S.screen === 'pedit' && S.pedit) savePedit();
   try {
     localStorage.setItem('ce-calc-v1', JSON.stringify({
       mode: S.mode, fmt: S.fmt, win: S.win, tbl: S.tbl, vars: Object.fromEntries(Object.entries(S.vars).map(([k, v]) => [k, isC(v) ? { re: v.re, im: v.im } : v])), ans: typeof S.ans === 'number' || Array.isArray(S.ans) ? S.ans : 0,
       Y: S.Y.map(y => ({ t: y.ed.t, on: y.on })), entries: S.entries.slice(-20),
-      lists: S.lists, plots: S.plots, mats: S.mats,
+      lists: S.lists, plots: S.plots, mats: S.mats, strs: S.strs, progs: S.progs,
       P: S.P.map(q => ({ x: q.x.t, y: q.y.t, on: q.on })), R: S.R.map(q => ({ t: q.ed.t, on: q.on })), Q: S.Q.map(q => ({ e: q.e.t, init: q.init.t, on: q.on })),
     }));
   } catch (e) { /* storage unavailable */ }
@@ -196,6 +197,8 @@ function load() {
     if (Array.isArray(d.entries)) S.entries = d.entries.filter(Array.isArray);
     if (Array.isArray(d.lists)) d.lists.slice(0, 6).forEach((l, i) => { if (Array.isArray(l)) S.lists[i] = l.filter(v => typeof v === 'number' && isFinite(v)).slice(0, 999); });
     const toks = a => Array.isArray(a) ? a.filter(x => typeof x === 'string') : [];
+    if (d.strs && typeof d.strs === 'object') Object.entries(d.strs).forEach(([k, v]) => { if (/^[0-9]$/.test(k) && typeof v === 'string') S.strs[k] = v; });
+    if (d.progs && typeof d.progs === 'object') Object.entries(d.progs).forEach(([k, v]) => { if (/^[A-Zθ][A-Z0-9θ]{0,7}$/.test(k) && Array.isArray(v)) S.progs[k] = v.map(toks); });
     if (Array.isArray(d.P)) d.P.slice(0, 6).forEach((q, i) => { S.P[i].x.set(toks(q.x)); S.P[i].y.set(toks(q.y)); S.P[i].on = !!q.on; });
     if (Array.isArray(d.R)) d.R.slice(0, 6).forEach((q, i) => { S.R[i].ed.set(toks(q.t)); S.R[i].on = !!q.on; });
     if (Array.isArray(d.Q)) d.Q.slice(0, 3).forEach((q, i) => { S.Q[i].e.set(toks(q.e)); S.Q[i].init.set(toks(q.init)); S.Q[i].on = !!q.on; });
@@ -257,11 +260,12 @@ function toFrac(v) {
    ================================================================= */
 const POSTFIX = new Set(['²', '³', '⁻¹', '!', '°', 'ʳ', 'ᵀ']);
 const STATVARS = { 'x̄': 1, 'Σx': 1, 'Σx²': 1, 'Sx': 1, 'σx': 1, 'n ': 1, 'minX': 1, 'maxX': 1, 'Q1': 1, 'Med': 1, 'Q3': 1, 'ȳ': 1, 'Σy': 1, 'Σy²': 1, 'Σxy': 1, 'Sy': 1, 'σy': 1, 'minY': 1, 'maxY': 1, 'a': 1, 'b': 1, 'c': 1, 'd': 1, 'e ': 1, 'r': 1, 'r²': 1, 'R²': 1 };
-const CONSTS = new Set(['π', 'e', 'rand', 'Ans', 'i', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
+const CONSTS = new Set(['π', 'e', 'rand', 'Ans', 'i', 'getKey', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
 const RELOPS = new Set(['=', '≠', '>', '≥', '<', '≤']);
 const isY = t => /^Y[0-9]$/.test(t);
 const isVar = t => (t.length === 1 && LETTERS.includes(t)) || t === 'n';
 const SEQN = ['u', 'v', 'w'];
+const isStr = t => /^Str[0-9]$/.test(t);
 const isFn = t => t.length > 1 && t.endsWith('(');
 const isL = t => /^L[1-6]$/.test(t);
 
@@ -270,6 +274,13 @@ function lex(toks) {
   const dig = t => t !== undefined && /^[0-9.]$/.test(t);
   while (i < toks.length) {
     const t = toks[i];
+    if (t === '"') {
+      i++; let str = '';
+      while (i < toks.length && toks[i] !== '"') str += toks[i++];
+      if (toks[i] === '"') i++;
+      out.push({ t: 'str', v: str });
+      continue;
+    }
     if (dig(t) || t === 'ᴇ') {
       let m = '';
       while (dig(toks[i])) m += toks[i++];
@@ -296,7 +307,7 @@ function parse(toks) {
   const closeParen = () => { if (is(')')) { i++; return; } if (i >= L.length || is('→')) return; err('SYNTAX'); };
   const startsPrimary = l => {
     if (!l) return false;
-    if (l.t === 'num') return true;
+    if (l.t === 'num' || l.t === 'str') return true;
     const v = l.v;
     return v === '(' || v === '{' || v === '[' || SEQN.includes(v) || isMt(v) || isFn(v) || CONSTS.has(v) || isVar(v) || isY(v) || isL(v) || v === '⁻';
   };
@@ -336,6 +347,8 @@ function parse(toks) {
     const l = L[i];
     if (!l) err('SYNTAX');
     if (l.t === 'num') { i++; return { k: 'n', v: l.v }; }
+    if (l.t === 'str') { i++; return { k: 's', v: l.v }; }
+    if (isStr(l.v)) { i++; return { k: 'S', n: l.v[3] }; }
     const v = l.v;
     if (v === '(') { i++; const e = pOr(); closeParen(); return e; }
     if (v === '{') {
@@ -391,6 +404,7 @@ function parse(toks) {
    Evaluator
    ================================================================= */
 const chk = v => {
+  if (typeof v === 'string') return v;
   if (Array.isArray(v)) return v.map(chk);
   if (v instanceof Mat) { v.r.forEach(row => row.forEach(chk)); return v; }
   if (v instanceof C) { chk(v.re); chk(v.im); return v; }
@@ -551,6 +565,30 @@ function fmtMat(m, frac) {
   const w = m.r[0].map((_, j) => Math.max(...S2.map(r => cells(r[j]).length)));
   return S2.map((r, i) => (i === 0 ? '[' : ' ') + '[' + r.map((x, j) => ' '.repeat(w[j] - cells(x).length) + x).join(' ') + ']' + (i === S2.length - 1 ? ']' : '')).join('\n');
 }
+function strFn(name, a) {
+  const str = v => { if (typeof v !== 'string') err('DATA TYPE'); return v; };
+  switch (name) {
+    case 'length(': need(a, 1); return [...str(a[0])].length;
+    case 'sub(': { need(a, 3); const c = [...str(a[0])], b = a[1], n = a[2]; if (!isInt(b) || !isInt(n) || b < 1 || n < 0 || b - 1 + n > c.length) err('DOMAIN'); return c.slice(b - 1, b - 1 + n).join(''); }
+    case 'inString(': { need(a, 2, 3); const h = str(a[0]), nd = str(a[1]), st = (a[2] ?? 1) - 1; const k = h.indexOf(nd, st); return k < 0 ? 0 : [...h.slice(0, k)].length + 1; }
+    case 'expr(': need(a, 1); return evalAny(strTokens(str(a[0])));
+    case 'toString(': need(a, 1); return showVal(a[0]);
+  }
+  return undefined;
+}
+// turn typed text back into tokens (used by expr( and keyboard paste)
+const TOKLIST = ['sin⁻¹(', 'cos⁻¹(', 'tan⁻¹(', 'sin(', 'cos(', 'tan(', 'log(', 'ln(', '√(', 'abs(', 'Ans', 'π', 'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7', 'Y8', 'Y9', 'Y0'];
+function strTokens(s) {
+  const out = []; let i = 0;
+  while (i < s.length) {
+    const m = TOKLIST.find(t => s.startsWith(t, i));
+    if (m) { out.push(m); i += m.length; continue; }
+    let ch = s[i++];
+    if (ch === '-') ch = '−'; else if (ch === '*') ch = '×'; else if (ch === '/') ch = '÷';
+    out.push(ch);
+  }
+  return out;
+}
 function fmtDMS(v) {
   const neg = v < 0; let a = Math.abs(v), d = Math.floor(a), m = Math.floor((a - d) * 60), sec = ((a - d) * 60 - m) * 60;
   sec = Math.round(sec * 1e6) / 1e6; if (sec >= 60) { sec -= 60; m++; } if (m >= 60) { m -= 60; d++; }
@@ -592,6 +630,13 @@ function nCr(n, r) { if (n < 0 || r < 0 || !isInt(n) || !isInt(r)) err('DOMAIN')
 function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a; }
 
 function binop(op, a, b) {
+  if (typeof a === 'string' || typeof b === 'string') {
+    if (typeof a !== 'string' || typeof b !== 'string') err('DATA TYPE');
+    if (op === '+') return a + b;
+    if (op === '=') return a === b ? 1 : 0;
+    if (op === '≠') return a === b ? 0 : 1;
+    err('DATA TYPE');
+  }
   if (isMat(a) || isMat(b)) return matBin(op, a, b);
   if (isC(a) || isC(b)) return chk(cbin(op, a, b));
   switch (op) {
@@ -642,6 +687,7 @@ function constVal(v) {
     case 'rand': return Math.random();
     case 'Ans': return Array.isArray(S.ans) ? S.ans.slice() : S.ans;
     case 'i': return new C(0, 1);
+    case 'getKey': { const k = S.run ? S.run.lastKey : 0; if (S.run) S.run.lastKey = 0; return k; }
   }
   if (v in STATVARS) { const x = S.statVars[v]; if (x === undefined) err('UNDEFINED'); return x; }
   if (v in WINVARS) return S.win[WINVARS[v]];
@@ -853,6 +899,8 @@ function callFn(name, args, env) {
     need(args, 4); return chk(golden(f, numA(2), numA(3), name === 'fMax('));
   }
   const vals = args.map(n => ev(n, env));
+  const sf = strFn(name, vals);
+  if (sf !== undefined) return sf;
   const mf = matFn(name, vals);
   if (mf !== undefined) return mf;
   const lf = listFn(name, vals);
@@ -965,6 +1013,8 @@ function ev(n, env) {
     case 'b': return bcast([ev(n.a, env), ev(n.b, env)], ([a, b]) => binop(n.op, a, b));
     case 'p': return bcast([ev(n.a, env)], ([a]) => postop(n.op, a));
     case 'f': return chk(callFn(n.name, n.args, env));
+    case 's': return n.v;
+    case 'S': { const v = S.strs[n.n]; if (v === undefined) err('UNDEFINED'); return v; }
     case 'list': return n.items.map(it => numC(ev(it, env)));
     case 'seq': return bcast([ev(n.a, env)], ([k]) => seqVal(n.s, num(k)));
     case 'mat': {
@@ -1049,6 +1099,7 @@ function setVar(name, v) {
   else S.vars[name] = v;
 }
 function showVal(v, frac, mode) {
+  if (typeof v === 'string') return v;
   if (isMat(v)) return fmtMat(v, frac);
   const f = x => isC(x) ? fmtC(x, frac, mode === 'polar') : mode === 'dms' ? fmtDMS(x) : mode === 'polar' && x < 0 ? fmtC(new C(x, 0), frac, true) : frac ? toFrac(x) : fmtNum(x);
   return Array.isArray(v) ? '{' + v.map(f).join(' ') + '}' : f(v);
@@ -1056,6 +1107,7 @@ function showVal(v, frac, mode) {
 function parseStoreTarget(rest) {
   if (rest.length === 1 && STORABLE.has(rest[0])) return { name: rest[0] };
   if (rest.length === 1 && isL(rest[0])) return { list: +rest[0][1] - 1 };
+  if (rest.length === 1 && isStr(rest[0])) return { str: rest[0][3] };
   if (rest.length === 1 && isMt(rest[0])) return { mat: rest[0][1] };
   if (rest.length >= 5 && isMt(rest[0]) && rest[1] === '(') {
     let inner = rest.slice(2); if (inner[inner.length - 1] === ')') inner = inner.slice(0, -1);
@@ -1070,6 +1122,7 @@ function parseStoreTarget(rest) {
 }
 function doStore(s, v) {
   if (s.name) { setVar(s.name, s.name in WINVARS ? num(v) : numC(v)); return; }
+  if (s.str !== undefined) { if (typeof v !== 'string') err('DATA TYPE'); S.strs[s.str] = v; return; }
   if (s.mat) {
     if (s.r) {
       const m = S.mats[s.mat]; if (!m) err('UNDEFINED');
@@ -1090,6 +1143,8 @@ function doStore(s, v) {
   S.lists[s.list] = v.slice();
 }
 function runLine(toks) {
+  const joined = toks.join('');
+  if (joined.startsWith('prgm') && S.screen !== 'prun' && !(S.run && S.run.active)) { const name = joined.slice(4); if (!S.progs[name]) err('UNDEFINED'); startProgram(name); return { prog: true }; }
   if (COMMANDS.has(toks[0])) return runCommand(toks[0], toks.slice(1));
   let t = toks.slice(), frac = false;
   let mode = null;
@@ -1109,7 +1164,8 @@ function runLine(toks) {
    STAT commands: sorting, 1/2-Var Stats, regressions
    ================================================================= */
 const REGS = ['LinReg(ax+b) ', 'QuadReg ', 'CubicReg ', 'QuartReg ', 'LinReg(a+bx) ', 'LnReg ', 'ExpReg ', 'PwrReg '];
-const COMMANDS = new Set(['Matr►list(', 'List►matr(', 'SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
+const DRAWCMDS = ['ClrDraw', 'Line(', 'Horizontal ', 'Vertical ', 'Tangent(', 'DrawF ', 'Shade(', 'DrawInv ', 'Circle(', 'Text(', 'Pt-On(', 'Pt-Off(', 'Pt-Change(', 'Pxl-On(', 'Pxl-Off(', 'Pxl-Change('];
+const COMMANDS = new Set([...DRAWCMDS, 'Matr►list(', 'List►matr(', 'SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
 function splitArgs(t) {
   const out = []; let cur = [], d = 0;
   for (const x of t) {
@@ -1414,6 +1470,61 @@ const TESTS = [
       return { lines: ['y=a+bx', ival(R.slope - me, R.slope + me), 'b=' + SF(R.slope), 'df=' + SF(R.df), 's=' + SF(R.s), 'a=' + SF(R.int), 'r²=' + SF(R.r * R.r), 'r=' + SF(R.r)] };
     } },
 ];
+function drawCommand(cmd, args) {
+  const N = k => evalTokens(args[k]);
+  const want = (lo, hi = lo) => { if (args.length < lo || args.length > hi) err('ARGUMENT'); };
+  const D = S.draws;
+  switch (cmd) {
+    case 'ClrDraw': D.length = 0; break;
+    case 'Line(': want(4, 5); D.push({ k: 'line', a: [N(0), N(1), N(2), N(3)], erase: args[4] && N(4) === 0 }); break;
+    case 'Horizontal ': want(1); D.push({ k: 'h', y: N(0) }); break;
+    case 'Vertical ': want(1); D.push({ k: 'v', x: N(0) }); break;
+    case 'Circle(': want(3); D.push({ k: 'circle', x: N(0), y: N(1), r: N(2) }); break;
+    case 'Tangent(': want(2); D.push({ k: 'tan', e: args[0], x: N(1) }); break;
+    case 'DrawF ': want(1); D.push({ k: 'f', e: args[0] }); break;
+    case 'DrawInv ': want(1); D.push({ k: 'inv', e: args[0] }); break;
+    case 'Shade(': want(2, 4); D.push({ k: 'shade', lo: args[0], hi: args[1], a: args[2] ? N(2) : null, b: args[3] ? N(3) : null }); break;
+    case 'Text(': { want(3); const v = evalAny(args[2]); D.push({ k: 'text', r: N(0), c: N(1), t: showVal(v) }); break; }
+    case 'Pt-On(': case 'Pt-Off(': case 'Pt-Change(': want(2, 3); D.push({ k: 'pt', x: N(0), y: N(1), mark: args[2] ? N(2) : 1, mode: cmd }); break;
+    case 'Pxl-On(': case 'Pxl-Off(': case 'Pxl-Change(': want(2); D.push({ k: 'pxl', r: N(0), c: N(1), mode: cmd }); break;
+  }
+  S.graphDirty = true;
+  return { graph: true };
+}
+function renderDraws(c) {
+  const blue = '#1a5fd8';
+  for (const d of S.draws) {
+    c.strokeStyle = c.fillStyle = d.erase || (d.mode && d.mode.endsWith('Off(')) ? '#fff' : blue;
+    c.lineWidth = d.erase ? 3 : 1.5;
+    const fx = (toks, x) => { try { return num(ev(edAst({ t: toks }), { X: x })); } catch (e) { return NaN; } };
+    switch (d.k) {
+      case 'line': c.beginPath(); c.moveTo(xToPx(d.a[0]), clampPy(yToPy(d.a[1]))); c.lineTo(xToPx(d.a[2]), clampPy(yToPy(d.a[3]))); c.stroke(); break;
+      case 'h': c.beginPath(); c.moveTo(0, yToPy(d.y)); c.lineTo(W, yToPy(d.y)); c.stroke(); break;
+      case 'v': c.beginPath(); c.moveTo(xToPx(d.x), SB); c.lineTo(xToPx(d.x), H); c.stroke(); break;
+      case 'circle': { c.beginPath(); for (let k = 0; k <= 120; k++) { const t = k / 120 * 2 * Math.PI, X = xToPx(d.x + d.r * Math.cos(t)), Y = yToPy(d.y + d.r * Math.sin(t)); k ? c.lineTo(X, Y) : c.moveTo(X, Y); } c.stroke(); break; }
+      case 'f': case 'inv': {
+        c.beginPath(); let on = false;
+        if (d.k === 'f') for (let px = 0; px < W; px++) { const y = fx(d.e, pxToX(px)); if (!Number.isFinite(y)) { on = false; continue; } const py = clampPy(yToPy(y)); on ? c.lineTo(px, py) : c.moveTo(px, py); on = true; }
+        else for (let py = SB; py < H; py++) { const x = fx(d.e, pyToY(py)); if (!Number.isFinite(x)) { on = false; continue; } const px = xToPx(x); on ? c.lineTo(px, py) : c.moveTo(px, py); on = true; }
+        c.stroke(); break;
+      }
+      case 'tan': {
+        const h = 1e-3, y0 = fx(d.e, d.x), m = (fx(d.e, d.x + h) - fx(d.e, d.x - h)) / (2 * h);
+        if (Number.isFinite(y0) && Number.isFinite(m)) { const x1 = S.win.xmin, x2 = S.win.xmax; c.beginPath(); c.moveTo(0, clampPy(yToPy(y0 + m * (x1 - d.x)))); c.lineTo(W, clampPy(yToPy(y0 + m * (x2 - d.x)))); c.stroke(); }
+        break;
+      }
+      case 'shade': {
+        c.globalAlpha = 0.3; c.beginPath();
+        const pa = d.a === null ? 0 : Math.max(0, xToPx(d.a)), pb = d.b === null ? W - 1 : Math.min(W - 1, xToPx(d.b));
+        for (let px = pa; px <= pb; px++) { const x = pxToX(px), lo = fx(d.lo, x), hi = fx(d.hi, x); if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) { c.moveTo(px, clampPy(yToPy(lo))); c.lineTo(px, clampPy(yToPy(hi))); } }
+        c.lineWidth = 1.2; c.stroke(); c.globalAlpha = 1; break;
+      }
+      case 'text': c.fillStyle = '#111'; c.font = '12px system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(d.t, d.c * (W / 265), SB + d.r * (GH / 165)); break;
+      case 'pt': { const X = xToPx(d.x), Y = yToPy(d.y); if (d.mark === 2) c.strokeRect(X - 2.5, Y - 2.5, 5, 5); else if (d.mark === 3) { c.beginPath(); c.moveTo(X - 3, Y); c.lineTo(X + 3, Y); c.moveTo(X, Y - 3); c.lineTo(X, Y + 3); c.stroke(); } else c.fillRect(X - 1.5, Y - 1.5, 3, 3); break; }
+      case 'pxl': c.fillRect(d.c * (W / 265), SB + d.r * (GH / 165), 1.5, 1.5); break;
+    }
+  }
+}
 function anova(groups) {
   if (groups.length < 2) err('ARGUMENT');
   groups.forEach(listArg);
@@ -1441,6 +1552,7 @@ function medMed(xs, ys, f) {
 function runCommand(cmd, rest) {
   if (cmd.endsWith('(') && rest[rest.length - 1] === ')') rest = rest.slice(0, -1);
   const args = splitArgs(rest);
+  if (DRAWCMDS.includes(cmd)) return drawCommand(cmd, args);
   switch (cmd) {
     case 'SortA(': case 'SortD(': {
       if (!args.length) err('SYNTAX');
@@ -1689,6 +1801,9 @@ const ERRHELP = {
   'DATA TYPE': 'Expected a number but got a list, or the other way round.',
   'STAT': 'Not enough different data points for this calculation.',
   'SINGULAR MAT': 'This matrix has no inverse (its determinant is 0).',
+  'BREAK': 'The program was stopped with ON.',
+  'LABEL': 'Goto or Menu( points to a Lbl that does not exist.',
+  'INCREMENT': 'A For( loop step cannot be 0.',
 };
 function wrapWords(s, n) { const out = []; let cur = ''; for (const w of s.split(' ')) { if ((cur + ' ' + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) out.push(cur.trim()); return out; }
 
@@ -1774,6 +1889,7 @@ function renderGraphBuffer() {
     if (S.mode.line !== 2) c.stroke();
   }
   drawPlots(c);
+  renderDraws(c);
   c.restore();
   S.graphDirty = false;
 }
@@ -2274,6 +2390,10 @@ function draw() {
     case 'table': drawTable(); break;
     case 'ledit': drawLedit(); break;
     case 'medit': drawMedit(); break;
+    case 'pedit': drawPedit(); break;
+    case 'pnew': drawPnew(); break;
+    case 'prun': drawPrun(); break;
+    case 'solver': drawSolver(); break;
     case 'stat': drawStatScr(); break;
     case 'test': drawTest(); break;
     case 'tdraw': drawTDraw(); break;
@@ -2286,6 +2406,342 @@ function draw() {
 setInterval(() => { S.blink = !S.blink; if (!S.off) redraw(); }, 500);
 
 function toast(text, ms = 2200) { S.toast = { text, until: performance.now() + ms }; }
+
+
+/* =================================================================
+   PRGM: program editor and TI-BASIC interpreter
+   ================================================================= */
+const KEYCODE = { yeq: 11, window: 12, zoom: 13, trace: 14, graph: 15, second: 21, mode: 22, del: 23, left: 24, up: 25, right: 26, alpha: 31, xt: 32, stat: 33, down: 34,
+  math: 41, apps: 42, prgm: 43, vars: 44, clear: 45, inv: 51, sin: 52, cos: 53, tan: 54, pow: 55, sq: 61, comma: 62, lp: 63, rp: 64, div: 65,
+  log: 71, n7: 72, n8: 73, n9: 74, mul: 75, ln: 81, n4: 82, n5: 83, n6: 84, sub: 85, sto: 91, n1: 92, n2: 93, n3: 94, add: 95, n0: 102, dot: 103, neg: 104, enter: 105 };
+const CTL = ['If ', 'Then', 'Else', 'For(', 'While ', 'Repeat ', 'End', 'Pause ', 'Lbl ', 'Goto ', 'IS>(', 'DS<(', 'Menu(', 'prgm', 'Return', 'Stop', 'DelVar '];
+const IO = ['Input ', 'Prompt ', 'Disp ', 'DispGraph', 'DispTable', 'Output(', 'getKey', 'ClrHome', 'ClrTable'];
+function openPedit(name) {
+  closeGraphState();
+  if (!S.progs[name]) S.progs[name] = [[]];
+  const lines = S.progs[name].map(t => new Ed(t.slice()));
+  lines.forEach(e => { e.c = 0; });
+  S.pedit = { name, lines, row: 0, scroll: 0 };
+  S.screen = 'pedit';
+}
+function savePedit() { const P = S.pedit; if (P) S.progs[P.name] = P.lines.map(e => e.t.slice()); }
+function drawPedit() {
+  const P = S.pedit, avail = COLS - 1, vis = ROWS - 1;
+  drawStr('PROGRAM:' + P.name, 0, 0, { color: '#2b4f8a' });
+  const out = [];
+  P.lines.forEach((e, i) => {
+    const ch = cells(e.str()), cp = i === P.row ? e.curChar() : -1;
+    const n = Math.max(1, Math.ceil(ch.length / avail), cp >= 0 ? Math.floor(cp / avail) + 1 : 1);
+    for (let k = 0; k < n; k++) out.push({ i, k, ch: ch.slice(k * avail, (k + 1) * avail), cp: cp >= 0 && Math.floor(cp / avail) === k ? cp % avail : -1, under: cp >= 0 ? ch[cp] : null });
+  });
+  const cur = out.findIndex(l => l.cp >= 0);
+  if (cur < P.scroll) P.scroll = cur;
+  if (cur >= P.scroll + vis) P.scroll = cur - vis + 1;
+  for (let r = 0; r < vis; r++) {
+    const l = out[P.scroll + r]; if (!l) break;
+    if (l.k === 0) drawCh(':', r + 1, 0, { color: '#6b7380' });
+    drawStr(l.ch.join(''), r + 1, 1);
+    if (l.cp >= 0) drawCursor(r + 1, 1 + l.cp, l.under);
+  }
+}
+function newProgram() {
+  closeGraphState();
+  S.pnew = { ed: new Ed([]) };
+  S.screen = 'pnew'; S.alpha = true; S.alphaLock = true;
+}
+function drawPnew() {
+  drawStr('Create New Program', 0, 0, { color: '#2b4f8a' });
+  drawStr('Name=', 1, 0);
+  const ed = S.pnew.ed; drawStr(ed.str(), 1, 5); drawCursor(1, 5 + ed.curChar(), undefined);
+  drawStr('Letters and digits, up to 8', 3, 0, { color: '#8a909a' });
+}
+
+/* ---- interpreter ---- */
+function compileProgram(name) {
+  const src = S.progs[name]; if (!src) err('UNDEFINED');
+  const st = [];
+  src.forEach((line, li) => {
+    let cur = [], inStr = false;
+    for (const t of line) {
+      if (t === '"') inStr = !inStr;
+      if (t === ':' && !inStr) { if (cur.length) st.push({ t: cur, line: li }); cur = []; continue; }
+      cur.push(t);
+    }
+    if (cur.length) st.push({ t: cur, line: li });
+  });
+  const match = {}, elses = {}, stack = [];
+  st.forEach((x, i) => {
+    const h = x.t[0];
+    if (h === 'If ' && st[i + 1] && st[i + 1].t[0] === 'Then') stack.push(i);
+    else if (h === 'For(' || h === 'While ' || h === 'Repeat ') stack.push(i);
+    else if (h === 'Else') { if (!stack.length) err('SYNTAX'); elses[stack[stack.length - 1]] = i; match[i] = stack[stack.length - 1]; }
+    else if (h === 'End') { if (!stack.length) err('SYNTAX'); const o = stack.pop(); match[o] = i; match[i] = o; }
+  });
+  const labels = {};
+  st.forEach((x, i) => { if (x.t[0] === 'Lbl ') labels[x.t.slice(1).join('')] = i; });
+  return { name, st, match, elses, labels, pc: 0, loops: {} };
+}
+function prunGrid() { return S.prun.grid; }
+function prunScroll() { const g = prunGrid(); g.shift(); g.push(' '.repeat(COLS)); S.prun.row = ROWS - 1; }
+function prunLine(text, right) {
+  const P = S.prun; if (P.row >= ROWS) prunScroll();
+  let ch = cells(text);
+  if (ch.length > COLS) ch = ch.slice(0, COLS - 1).concat(['…']);
+  const line = right ? Array(COLS - ch.length).fill(' ').concat(ch) : ch.concat(Array(COLS - ch.length).fill(' '));
+  P.grid[P.row] = line.join('');
+  P.row++;
+}
+function prunWrite(r, c, text) {
+  const P = S.prun;
+  let rr = r, cc = c;
+  for (const ch of cells(text)) {
+    if (rr >= ROWS) break;
+    const row = cells(P.grid[rr]); row[cc] = ch; P.grid[rr] = row.join('');
+    cc++; if (cc >= COLS) { cc = 0; rr++; }
+  }
+}
+function startProgram(name) {
+  const frame = compileProgram(name);
+  S.prun = { grid: Array.from({ length: ROWS }, () => ' '.repeat(COLS)), row: 0, input: null, pause: null, done: false, menu: null };
+  S.hist.forEach(() => {});
+  S.run = { frames: [frame], lastKey: 0, active: true, steps: 0, showGraph: false };
+  S.screen = 'prun';
+  setTimeout(runSteps, 0);
+}
+function runSteps() {
+  const R = S.run; if (!R || !R.active) return;
+  const t0 = performance.now();
+  try {
+    while (R.active && !S.prun.input && !S.prun.pause && !S.prun.menu && performance.now() - t0 < 14) {
+      for (let k = 0; k < 200 && R.active && !S.prun.input && !S.prun.pause && !S.prun.menu; k++) step();
+    }
+  } catch (e) {
+    const fr = R.frames[R.frames.length - 1];
+    R.active = false;
+    const st = fr.st[Math.max(0, fr.pc)];
+    const line = st ? st.line : 0, name = fr.name;
+    if (!(e instanceof CalcError)) { console.error(e); e = new CalcError('SYNTAX'); }
+    showError(e.type, () => { openPedit(name); S.pedit.row = Math.min(line, S.pedit.lines.length - 1); });
+    redraw(); return;
+  }
+  redraw();
+  if (R.active && !S.prun.input && !S.prun.pause && !S.prun.menu) setTimeout(runSteps, 0);
+}
+function endProgram() {
+  const R = S.run; R.active = false;
+  if (S.screen === 'prun' || S.screen === 'menu') { S.screen = 'prun'; S.prun.done = true; prunLine('Done', true); }
+}
+function evalStmt(t) { return evalAny(t); }
+function step() {
+  const R = S.run, fr = R.frames[R.frames.length - 1];
+  if (fr.pc >= fr.st.length) { R.frames.pop(); if (!R.frames.length) endProgram(); return; }
+  const x = fr.st[fr.pc], t = x.t, h = t[0], rest = t.slice(1);
+  const jump = i => { fr.pc = i; };
+  const args = () => { let r = rest; if (h.endsWith('(') && r[r.length - 1] === ')') r = r.slice(0, -1); return splitArgs(r); };
+  const varName = a => { if (a.length !== 1 || !(isVar(a[0]) || isStr(a[0]))) err('SYNTAX'); return a[0]; };
+  switch (h) {
+    case 'If ': {
+      const c = num(evalStmt(rest));
+      if (fr.st[fr.pc + 1] && fr.st[fr.pc + 1].t[0] === 'Then') {
+        if (c !== 0) jump(fr.pc + 2);
+        else { const e = fr.elses[fr.pc], end = fr.match[fr.pc]; if (end === undefined) err('SYNTAX'); jump(e !== undefined ? e + 1 : end + 1); }
+      } else jump(c !== 0 ? fr.pc + 1 : fr.pc + 2);
+      return;
+    }
+    case 'Then': jump(fr.pc + 1); return;
+    case 'Else': { const o = fr.match[fr.pc]; jump(fr.match[o] + 1); return; }
+    case 'For(': {
+      const a = args(); if (a.length < 3) err('ARGUMENT');
+      const v = varName(a[0]), start = num(evalStmt(a[1])), end = num(evalStmt(a[2])), stp = a[3] ? num(evalStmt(a[3])) : 1;
+      if (stp === 0) err('INCREMENT');
+      S.vars[v] = start; fr.loops[fr.pc] = { v, end, stp };
+      if (fr.match[fr.pc] === undefined) err('SYNTAX');
+      jump(stp > 0 ? (start <= end ? fr.pc + 1 : fr.match[fr.pc] + 1) : (start >= end ? fr.pc + 1 : fr.match[fr.pc] + 1));
+      return;
+    }
+    case 'While ': { if (fr.match[fr.pc] === undefined) err('SYNTAX'); jump(num(evalStmt(rest)) !== 0 ? fr.pc + 1 : fr.match[fr.pc] + 1); return; }
+    case 'Repeat ': if (fr.match[fr.pc] === undefined) err('SYNTAX'); jump(fr.pc + 1); return;
+    case 'End': {
+      const o = fr.match[fr.pc]; if (o === undefined) err('SYNTAX');
+      const oh = fr.st[o].t[0];
+      if (oh === 'For(') { const L = fr.loops[o]; S.vars[L.v] = num(S.vars[L.v]) + L.stp; const v = S.vars[L.v]; jump((L.stp > 0 ? v <= L.end : v >= L.end) ? o + 1 : fr.pc + 1); }
+      else if (oh === 'While ') jump(o);
+      else if (oh === 'Repeat ') jump(num(evalStmt(fr.st[o].t.slice(1))) !== 0 ? fr.pc + 1 : o + 1);
+      else jump(fr.pc + 1);
+      return;
+    }
+    case 'Lbl ': jump(fr.pc + 1); return;
+    case 'Goto ': { const k = fr.labels[rest.join('')]; if (k === undefined) err('LABEL'); jump(k + 1); return; }
+    case 'IS>(': case 'DS<(': {
+      const a = args(); if (a.length !== 2) err('ARGUMENT'); const v = varName(a[0]), lim = num(evalStmt(a[1]));
+      S.vars[v] = num(S.vars[v]) + (h === 'IS>(' ? 1 : -1);
+      const skip = h === 'IS>(' ? S.vars[v] > lim : S.vars[v] < lim;
+      jump(fr.pc + (skip ? 2 : 1)); return;
+    }
+    case 'Stop': R.frames.length = 0; endProgram(); return;
+    case 'Return': R.frames.pop(); if (!R.frames.length) endProgram(); return;
+    case 'Pause ': {
+      if (rest.length) { const v = evalStmt(rest); prunLine(showVal(v), typeof v !== 'string'); }
+      S.prun.pause = true; fr.pc++; return;
+    }
+    case 'Disp ': {
+      if (!rest.length) { fr.pc++; return; }
+      for (const a of args()) { const v = evalStmt(a); String(showVal(v)).split('\n').forEach(l => prunLine(l, typeof v !== 'string')); }
+      if (S.screen !== 'prun') S.screen = 'prun';
+      fr.pc++; return;
+    }
+    case 'Output(': {
+      const a = args(); if (a.length !== 3) err('ARGUMENT');
+      const r = num(evalStmt(a[0])), c = num(evalStmt(a[1]));
+      if (!isInt(r) || !isInt(c) || r < 1 || r > ROWS || c < 1 || c > COLS) err('DOMAIN');
+      prunWrite(r - 1, c - 1, showVal(evalStmt(a[2])));
+      S.screen = 'prun'; fr.pc++; return;
+    }
+    case 'ClrHome': S.prun.grid = Array.from({ length: ROWS }, () => ' '.repeat(COLS)); S.prun.row = 0; fr.pc++; return;
+    case 'DispGraph': S.screen = 'graph'; closeGraphState(); if (!checkWindow()) err('WINDOW RANGE'); S.screen = 'graph'; fr.pc++; return;
+    case 'DispTable': S.screen = 'table'; fr.pc++; return;
+    case 'ClrTable': fr.pc++; return;
+    case 'Input ': case 'Prompt ': {
+      const a = args();
+      if (h === 'Prompt ') {
+        if (!a.length) err('SYNTAX');
+        const vars = a.map(varName);
+        S.prun.queue = vars.map(v => ({ prompt: v + '=?', target: v }));
+      } else {
+        let prompt = '?', target;
+        if (a.length === 2) { prompt = showVal(evalStmt(a[0])); target = varName(a[1]); }
+        else if (a.length === 1) target = varName(a[0]); else err('SYNTAX');
+        S.prun.queue = [{ prompt, target }];
+      }
+      S.screen = 'prun'; nextInput(); fr.pc++; return;
+    }
+    case 'Menu(': {
+      const a = args(); if (a.length < 3 || a.length % 2 === 0) err('ARGUMENT');
+      const title = showVal(evalStmt(a[0])), items = [];
+      for (let k = 1; k < a.length; k += 2) items.push({ label: showVal(evalStmt(a[k])), lbl: a[k + 1].join('') });
+      S.prun.menu = true;
+      S.menu = { def: { prog: true, tabs: [{ title, items: items.map(it => ({ label: it.label, act: () => { S.prun.menu = false; S.screen = 'prun'; const k = fr.labels[it.lbl]; if (k === undefined) { R.active = false; showError('LABEL', null); return; } fr.pc = k + 1; setTimeout(runSteps, 0); } })) }] }, tab: 0, sel: 0, scroll: 0, ret: 'prun' };
+      S.screen = 'menu';
+      return;
+    }
+    case 'DelVar ': { const v = rest.join(''); if (isVar(v)) S.vars[v] = 0; else if (isL(v)) S.lists[+v[1] - 1] = []; else if (isMt(v)) delete S.mats[v[1]]; else if (isStr(v)) delete S.strs[v[3]]; fr.pc++; return; }
+  }
+  const joined = t.join('');
+  if (h === 'prgm' || h.startsWith('prgm')) {
+    const name = joined.slice(4);
+    if (R.frames.length > 40) err('MEMORY');
+    fr.pc++; R.frames.push(compileProgram(name));
+    return;
+  }
+  const r = runLine(t);
+  if (r && r.graph) S.screen = 'graph';
+  if (r && r.stat) { S.stat = { title: r.stat.title, lines: r.stat.lines, scroll: 0 }; }
+  fr.pc++;
+}
+function nextInput() {
+  const P = S.prun, q = P.queue && P.queue.shift();
+  if (!q) { P.input = null; return; }
+  if (P.row >= ROWS) prunScroll();
+  prunWrite(P.row, 0, q.prompt);
+  P.input = { ed: new Ed([]), row: P.row, col: cells(q.prompt).length, target: q.target };
+}
+function submitInput() {
+  const P = S.prun, I = P.input;
+  try {
+    let v;
+    if (isStr(I.target)) v = I.ed.str();
+    else v = evalAny(I.ed.t.length ? I.ed.t : ['0']);
+    doStore(isStr(I.target) ? { str: I.target[3] } : { name: I.target }, v);
+  } catch (e) {
+    if (!(e instanceof CalcError)) throw e;
+    S.run.active = false; showError(e.type, null); return;
+  }
+  P.row = I.row + 1; P.input = null;
+  nextInput();
+  if (!P.input) setTimeout(runSteps, 0);
+}
+function drawPrun() {
+  const P = S.prun;
+  P.grid.forEach((line, r) => drawStr(line, r, 0));
+  if (P.input) {
+    const I = P.input, ch = cells(I.ed.str());
+    drawStr(ch.join(''), I.row, I.col);
+    drawCursor(I.row, I.col + I.ed.curChar(), ch[I.ed.c]);
+  }
+  if (S.run && S.run.active && !P.input) {
+    // busy / paused indicator in the status bar
+    const k = Math.floor(performance.now() / 150) % 4;
+    ctx.save(); ctx.fillStyle = P.pause ? '#2b6cc4' : '#13a03b';
+    for (let j = 0; j < 4; j++) if (P.pause ? j % 2 === 0 : j !== k) ctx.fillRect(W - 60 + j * 6, 8, 4, 4);
+    ctx.restore();
+    setTimeout(redraw, 120);
+  }
+}
+
+/* =================================================================
+   Equation Solver
+   ================================================================= */
+function openSolver() {
+  closeGraphState();
+  S.solver = S.solver || { eq: new Ed([]), stage: 0, sel: 0, vals: {}, ed: null, lr: null, solved: null, lo: -1e99, hi: 1e99 };
+  S.solver.stage = 0; S.solver.ed = null; S.solver.eq.c = S.solver.eq.t.length;
+  S.screen = 'solver';
+}
+function solverVars() {
+  const seen = []; for (const t of S.solver.eq.t) if (isVar(t) && t !== 'n' && !seen.includes(t)) seen.push(t);
+  return seen;
+}
+function solverRows() { return [...solverVars(), 'bound']; }
+function solveNow() {
+  const Z = S.solver, vars = solverVars(), v = vars[Z.sel];
+  if (!v) return;
+  const ast = parse(Z.eq.t);
+  const env = {}; vars.forEach(k => { env[k] = num(S.vars[k] || 0); });
+  const f = x => { try { const r = ev(ast, { ...env, [v]: x }); return typeof r === 'number' ? r : NaN; } catch (e) { return NaN; } };
+  const g = num(S.vars[v] || 0);
+  let root = null;
+  // Newton/secant from the guess first
+  let x0 = g, x1 = g === 0 ? 1e-4 : g * (1 + 1e-4);
+  for (let k = 0; k < 60; k++) {
+    const f0 = f(x0), f1 = f(x1); if (!Number.isFinite(f0) || !Number.isFinite(f1) || f1 === f0) break;
+    const x2 = x1 - f1 * (x1 - x0) / (f1 - f0); x0 = x1; x1 = x2;
+    if (Math.abs(x1 - x0) <= 1e-14 * Math.max(1, Math.abs(x1)) && Math.abs(f(x1)) < 1e-9 * Math.max(1, Math.abs(f(g)))) { root = x1; break; }
+  }
+  if (root === null || root < Z.lo || root > Z.hi) {
+    root = null;
+    for (let span = 1; span <= 1e12 && root === null; span *= 10) {
+      const a = Math.max(Z.lo, g - span), b = Math.min(Z.hi, g + span);
+      try { root = findRoot(f, a, b, g); } catch (e) { root = null; }
+    }
+  }
+  if (root === null) { showError('NO SIGN CHNG', () => { S.screen = 'solver'; }); return; }
+  S.vars[v] = Math.abs(root) < 1e-13 ? 0 : root;
+  Z.solved = v; Z.lr = f(S.vars[v]); if (Math.abs(Z.lr) < 1e-10) Z.lr = 0;
+}
+function drawSolver() {
+  const Z = S.solver;
+  if (Z.stage === 0) {
+    drawStr('EQUATION SOLVER', 0, 0, { color: '#2b4f8a' });
+    drawStr('eqn:0=', 1, 0);
+    const ch = cells(Z.eq.str()), cp = Z.eq.curChar(), avail = COLS - 6, off = Math.max(0, cp - avail + 1);
+    drawStr(ch.slice(off, off + avail).join(''), 1, 6); drawCursor(1, 6 + cp - off, ch[cp]);
+    drawStr('ENTER to continue', 3, 0, { color: '#8a909a' });
+    return;
+  }
+  drawStr(cells(Z.eq.str()).slice(0, COLS).join(''), 0, 0, { color: '#2b4f8a' });
+  const rows = solverRows();
+  rows.forEach((v, i) => {
+    const r = i + 1; if (r >= ROWS - 1) return;
+    const here = i === Z.sel;
+    if (v === 'bound') { drawStr('bound={' + fmtNum(Z.lo, 5) + ',' + fmtNum(Z.hi, 5) + '}', r, 0); return; }
+    if (Z.solved === v) drawCh('■', r, 0, { color: '#2b6cc4' });
+    drawStr(v + '=', r, 1);
+    if (here && Z.ed) { const ch = cells(Z.ed.str()); drawStr(ch.join(''), r, 3); drawCursor(r, 3 + Z.ed.curChar(), ch[Z.ed.c]); }
+    else { drawStr(fmtNum(num(S.vars[v] || 0)), r, 3, here && S.blink ? { bg: '#111' } : {}); }
+  });
+  if (Z.lr !== null) drawStr('left-rt=' + fmtNum(Z.lr), ROWS - 2, 1);
+  drawStr('ALPHA+ENTER = SOLVE', ROWS - 1, 0, { color: '#8a909a' });
+}
 
 /* =================================================================
    Screen openers
@@ -2382,7 +2838,8 @@ function openOpts(kind) {
 
 function openMenu(def) {
   let ret;
-  if (def.home) ret = 'home';
+  if (def.home && S.screen !== 'pedit') ret = 'home';
+  else if (S.screen === 'pedit') ret = 'pedit';
   else if (S.screen === 'ledit') { if (!S.ledit.ed) S.ledit.ed = new Ed([]); ret = 'ledit'; }
   else if (S.screen === 'medit') { if (!S.medit.ed) S.medit.ed = new Ed([]); ret = 'medit'; }
   else ret = editorFor(S.screen) ? S.screen : (def.keepScreen ? S.screen : 'home');
@@ -2560,7 +3017,7 @@ const T = (tok, label = tok) => ({ label, tok });
 function mkTabs(tabs) { return tabs.map(t => ({ title: t.title, items: t.items.map(it => ({ label: it.label, act: it.act || menuInsert(it.tok), dim: it.dim })) })); }
 const MENUS = {
   MATH: () => ({ tabs: mkTabs([
-    { title: 'MATH', items: [T('►Frac'), T('►Dec'), T('³'), T('³√('), T('ˣ√', 'ˣ√'), T('fMin('), T('fMax('), T('nDeriv('), T('fnInt('), T('Σ('), T('logBASE(')] },
+    { title: 'MATH', items: [T('►Frac'), T('►Dec'), T('³'), T('³√('), T('ˣ√', 'ˣ√'), T('fMin('), T('fMax('), T('nDeriv('), T('fnInt('), T('Σ('), T('logBASE('), { label: 'Solver…', act: openSolver }] },
     { title: 'NUM', items: [T('abs('), T('round('), T('iPart('), T('fPart('), T('int('), T('min('), T('max('), T('lcm('), T('gcd('), T('remainder(')] },
     { title: 'CPX', items: [T('conj('), T('real('), T('imag('), T('angle('), T('abs('), T('►Rect'), T('►Polar')] },
     { title: 'PROB', items: [T('rand'), T(' nPr ', 'nPr'), T(' nCr ', 'nCr'), T('!'), T('randInt('), T('randNorm('), T('randBin(')] },
@@ -2579,6 +3036,7 @@ const MENUS = {
   VARS: () => ({ tabs: mkTabs([
     { title: 'VARS', items: Object.keys(WINVARS).map(k => T(k)) },
     { title: 'Y-VARS', items: YLAB.map(d => T('Y' + d)) },
+    { title: 'STRING', items: '1234567890'.split('').map(d => T('Str' + d)) },
     { title: 'STAT', items: [...Object.keys(STATVARS).map(k => T(k, k.trim())), { label: 'RegEQ', act: () => { S.screen = S.menu.ret; if (!S.regEQ) { toast('Run a regression first'); return; } S.regEQ.forEach(insertTok); } }] },
   ]) }),
   ZOOM: () => ({ keepScreen: true, tabs: mkTabs([
@@ -2622,6 +3080,23 @@ const MENUS = {
     { label: 'PlotsOff', act: () => { S.plots.forEach(p => { p.on = false; }); S.graphDirty = true; goHome(); toast('All plots off'); } },
     { label: 'PlotsOn', act: () => { S.plots.forEach(p => { p.on = true; }); S.graphDirty = true; goHome(); toast('All plots on'); } },
   ] }]) }),
+  PRGM: () => {
+    const names = Object.keys(S.progs).sort();
+    if (S.screen === 'pedit') return { tabs: mkTabs([
+      { title: 'CTL', items: CTL.map(t => T(t, t.trim())) },
+      { title: 'I/O', items: IO.map(t => T(t, t.trim())) },
+      { title: 'EXEC', items: names.map(n => T('prgm' + n, n)) },
+    ]) };
+    return { home: true, tabs: mkTabs([
+      { title: 'EXEC', items: names.length ? names.map(n => T('prgm' + n, n)) : [{ label: '(no programs)', dim: true, act: () => { goHome(); } }] },
+      { title: 'EDIT', items: names.length ? names.map(n => ({ label: n, act: () => openPedit(n) })) : [{ label: '(no programs)', dim: true, act: () => { goHome(); } }] },
+      { title: 'NEW', items: [{ label: 'Create New', act: newProgram }] },
+    ]) };
+  },
+  DRAW: () => ({ home: true, tabs: mkTabs([
+    { title: 'DRAW', items: [T('ClrDraw'), T('Line('), T('Horizontal ', 'Horizontal'), T('Vertical ', 'Vertical'), T('Tangent('), T('DrawF ', 'DrawF'), T('Shade('), T('DrawInv ', 'DrawInv'), T('Circle('), T('Text(')] },
+    { title: 'POINTS', items: [T('Pt-On('), T('Pt-Off('), T('Pt-Change('), T('Pxl-On('), T('Pxl-Off('), T('Pxl-Change(')] },
+  ]) }),
   MEM: () => ({ tabs: mkTabs([{ title: 'MEMORY', items: [
     { label: 'About', act: () => { goHome(); toast('Web graphing calculator, CE style. Real-number mode, function graphing.', 3500); } },
     { label: 'Clear Home', act: () => { goHome(); S.hist = []; } },
@@ -2645,7 +3120,7 @@ function resetAll() {
   for (const L of LETTERS) S.vars[L] = 0; S.ans = 0;
   S.Y.forEach(y => { y.ed.clear(); y.on = true; y.ast = undefined; });
   S.hist = []; S.entries = []; S.homeEd.clear(); S.graphDirty = true;
-  S.lists = [[], [], [], [], [], []]; S.mats = {}; S.statVars = {};
+  S.lists = [[], [], [], [], [], []]; S.mats = {}; S.statVars = {}; S.strs = {}; S.draws = [];
   S.P.forEach(q => { q.x.clear(); q.y.clear(); q.on = true; }); S.R.forEach(q => { q.ed.clear(); q.on = true; }); S.Q.forEach(q => { q.e.clear(); q.init.clear(); q.on = true; });
   S.plots.forEach(p => Object.assign(p, { on: false, type: 0, x: 0, y: 1, mark: 0 }));
 }
@@ -2661,6 +3136,10 @@ function editorFor(screen) {
   if (screen === 'graph' && S.g.prompt) return S.g.prompt.ed;
   if (screen === 'ledit') return S.ledit.ed;
   if (screen === 'medit') return S.medit.ed;
+  if (screen === 'pedit') return S.pedit.lines[S.pedit.row];
+  if (screen === 'pnew') return S.pnew.ed;
+  if (screen === 'prun') return S.prun.input && S.prun.input.ed;
+  if (screen === 'solver') return S.solver.stage === 0 ? S.solver.eq : S.solver.ed;
   if (screen === 'test') return S.test && S.test.ed;
   return null;
 }
@@ -2673,6 +3152,9 @@ function insertTok(tok) {
   if (S.screen === 'yeq' && S.yeq.plot != null) return;
   if (S.screen === 'ledit' && !S.ledit.ed) S.ledit.ed = new Ed([]);
   if (S.screen === 'medit' && !S.medit.ed) S.medit.ed = new Ed([]);
+  if (S.screen === 'solver' && S.solver.stage === 1 && !S.solver.ed && solverRows()[S.solver.sel] !== 'bound') S.solver.ed = new Ed([]);
+  if (S.screen === 'pnew' && !/^[A-Z0-9θ]$/.test(tok)) return;
+  if (S.screen === 'prun' && !(S.prun.input)) { if (S.run && S.run.active) return; goHome(); }
   const ed = editorFor(S.screen);
   if (!ed) return;
   if (S.screen === 'home' && ed.t.length === 0 && ANS_OPS.has(tok)) ed.ins('Ans');
@@ -2689,6 +3171,8 @@ function homeEnter() {
   S.entryIdx = -1;
   try {
     const r = runLine(toks);
+    if (r && r.graph) { S.hist.push({ t: toks.join(''), a: 'L' }); ed.clear(); closeGraphState(); openGraph(); return; }
+    if (r && r.prog) { S.hist.push({ t: toks.join(''), a: 'L' }); ed.clear(); return; }
     if (r && r.stat) {
       S.hist.push({ t: toks.join(''), a: 'L' });
       ed.clear();
@@ -2697,7 +3181,7 @@ function homeEnter() {
       return;
     }
     S.hist.push({ t: toks.join(''), a: 'L' });
-    String(r).split('\n').forEach(line => S.hist.push({ t: line, a: 'R' }));
+    String(r).split('\n').forEach(line => S.hist.push({ t: line, a: typeof S.ans === 'string' ? 'L' : 'R' }));
     if (S.hist.length > 80) S.hist.splice(0, S.hist.length - 80);
     ed.clear();
   } catch (e) {
@@ -2790,7 +3274,7 @@ const HANDLERS = {
       case 'LEFT': m.tab = (m.tab - 1 + d.tabs.length) % d.tabs.length; m.sel = 0; m.scroll = 0; return true;
       case 'RIGHT': m.tab = (m.tab + 1) % d.tabs.length; m.sel = 0; m.scroll = 0; return true;
       case 'ENTER': pick(m.sel); return true;
-      case 'CLEAR': case 'BS': S.screen = m.ret; if (m.ret === 'graph' && S.g.mode === 'none') {} return true;
+      case 'CLEAR': case 'BS': if (d.prog) return true; S.screen = m.ret; if (m.ret === 'graph' && S.g.mode === 'none') {} return true;
     }
     if (a.startsWith('i:')) {
       const t = a.slice(2);
@@ -2965,6 +3449,97 @@ const HANDLERS = {
     }
     return false;
   },
+  pedit(a) {
+    const P = S.pedit, L = P.lines, ed = L[P.row];
+    switch (a) {
+      case 'UP': if (P.row > 0) { P.row--; L[P.row].c = Math.min(ed.c, L[P.row].t.length); } return true;
+      case 'DOWN': if (P.row < L.length - 1) { P.row++; L[P.row].c = Math.min(ed.c, L[P.row].t.length); } return true;
+      case 'LEFT': if (ed.c > 0) ed.left(); else if (P.row > 0) { P.row--; L[P.row].c = L[P.row].t.length; } return true;
+      case 'RIGHT': if (ed.c < ed.t.length) ed.right(); else if (P.row < L.length - 1) { P.row++; L[P.row].c = 0; } return true;
+      case 'ENTER': { const tail = ed.t.splice(ed.c); const n = new Ed(tail); n.c = 0; L.splice(P.row + 1, 0, n); P.row++; return true; }
+      case 'DEL': if (!ed.t.length && L.length > 1) { L.splice(P.row, 1); P.row = Math.min(P.row, L.length - 1); L[P.row].c = 0; } else ed.del(); return true;
+      case 'BS': if (ed.c === 0 && P.row > 0) { const prev = L[P.row - 1], k = prev.t.length; prev.t.push(...ed.t); L.splice(P.row, 1); P.row--; prev.c = k; } else ed.bs(); return true;
+      case 'CLEAR': ed.clear(); return true;
+      case 'INS': return true;
+    }
+    if (!a.startsWith('i:')) savePedit();
+    return false;
+  },
+  pnew(a) {
+    const ed = S.pnew.ed;
+    switch (a) {
+      case 'ENTER': {
+        const n = ed.str();
+        if (!/^[A-Zθ][A-Z0-9θ]{0,7}$/.test(n)) { toast('Name must start with a letter, up to 8 characters'); return true; }
+        S.alpha = false; S.alphaLock = false;
+        openPedit(n); return true;
+      }
+      case 'CLEAR': S.alpha = false; S.alphaLock = false; goHome(); return true;
+      case 'DEL': ed.del(); return true;
+      case 'BS': ed.bs(); return true;
+      case 'LEFT': ed.left(); return true;
+      case 'RIGHT': ed.right(); return true;
+    }
+    if (a.startsWith('i:') && ed.t.length >= 8) return true;
+    if (!a.startsWith('i:')) { S.alpha = false; S.alphaLock = false; }
+    return false;
+  },
+  prun(a) {
+    const P = S.prun;
+    if (P.input) {
+      const ed = P.input.ed;
+      switch (a) {
+        case 'ENTER': submitInput(); return true;
+        case 'CLEAR': ed.clear(); return true;
+        case 'DEL': ed.del(); return true;
+        case 'BS': ed.bs(); return true;
+        case 'LEFT': ed.left(); return true;
+        case 'RIGHT': ed.right(); return true;
+      }
+      return !a.startsWith('i:');
+    }
+    if (P.pause) { if (a === 'ENTER') { P.pause = null; setTimeout(runSteps, 0); } return true; }
+    if (S.run && S.run.active) return true;
+    if (a === 'CLEAR' || a === 'BS') { goHome(); return true; }
+    if (a === 'ENTER') { goHome(); homeEnter(); return true; }
+    goHome(); return false;
+  },
+  solver(a) {
+    const Z = S.solver;
+    if (Z.stage === 0) {
+      const ed = Z.eq;
+      switch (a) {
+        case 'ENTER': case 'DOWN': if (ed.t.length) { try { parse(ed.t); } catch (e) { showError('SYNTAX', () => { S.screen = 'solver'; }); return true; } Z.stage = 1; Z.sel = 0; Z.ed = null; Z.lr = null; Z.solved = null; } return true;
+        case 'CLEAR': ed.clear(); return true;
+        case 'DEL': ed.del(); return true;
+        case 'BS': ed.bs(); return true;
+        case 'LEFT': ed.left(); return true;
+        case 'RIGHT': ed.right(); return true;
+        case 'UP': case 'SOLVE': return true;
+      }
+      return false;
+    }
+    const rows = solverRows();
+    const commit = () => {
+      if (!Z.ed) return true;
+      if (!Z.ed.t.length) { Z.ed = null; return true; }
+      try { S.vars[rows[Z.sel]] = evalTokens(Z.ed.t); Z.ed = null; Z.lr = null; Z.solved = null; return true; }
+      catch (e) { if (!(e instanceof CalcError)) throw e; const keep = Z.ed.t.slice(); showError(e.type, () => { S.screen = 'solver'; Z.ed = new Ed(keep); }); return false; }
+    };
+    switch (a) {
+      case 'UP': if (!commit()) return true; if (Z.sel > 0) Z.sel--; else { Z.stage = 0; Z.eq.c = Z.eq.t.length; } return true;
+      case 'DOWN': case 'ENTER': if (!commit()) return true; if (Z.sel < rows.length - 1) Z.sel++; return true;
+      case 'SOLVE': if (!commit()) return true; solveNow(); return true;
+      case 'CLEAR': if (Z.ed && Z.ed.t.length) Z.ed.clear(); else if (rows[Z.sel] !== 'bound') Z.ed = new Ed([]); return true;
+      case 'DEL': if (Z.ed) Z.ed.del(); return true;
+      case 'BS': if (Z.ed) Z.ed.bs(); return true;
+      case 'LEFT': if (Z.ed) Z.ed.left(); return true;
+      case 'RIGHT': if (Z.ed) Z.ed.right(); return true;
+    }
+    if (a.startsWith('i:')) return rows[Z.sel] === 'bound';
+    if (!commit()) return true;
+    return false;
+  },
   stat(a) {
     const st = S.stat;
     switch (a) {
@@ -3033,7 +3608,8 @@ function doAction(a) {
     case 'TABLE': openTable(); return;
     case 'MODE': openOpts('mode'); return;
     case 'MATH': case 'TEST': case 'ANGLE': case 'DISTR': case 'VARS': case 'MEM': case 'CATALOG':
-    case 'STAT': case 'LIST': case 'STATPLOT': case 'MATRIX': openMenu(MENUS[a]()); return;
+    case 'STAT': case 'LIST': case 'STATPLOT': case 'MATRIX': case 'PRGM': case 'DRAW': openMenu(MENUS[a]()); return;
+    case 'SOLVE': openSolver(); return;
     case 'ON': goHome(); return;
     case 'OFF': S.off = true; S.second = S.alpha = S.alphaLock = false; return;
     case 'INS': toast('Insert mode is always on'); return;
@@ -3060,7 +3636,7 @@ K('xt', 'X,T,θ,<i>n</i>', 'link', '', 'XT', 'na:LINK', 'XT', 'sm');
 K('stat', 'stat', 'list', '', 'STAT', 'LIST', 'STAT', 'sm');
 K('math', 'math', 'test', 'A', 'MATH', 'TEST', 'i:A', 'sm');
 K('apps', 'apps', 'angle', 'B', 'na:APPS', 'ANGLE', 'i:B', 'sm');
-K('prgm', 'prgm', 'draw', 'C', 'na:PRGM', 'na:DRAW', 'i:C', 'sm');
+K('prgm', 'prgm', 'draw', 'C', 'PRGM', 'DRAW', 'i:C', 'sm');
 K('vars', 'vars', 'distr', '', 'VARS', 'DISTR', 'VARS', 'sm');
 K('clear', 'clear', '', '', 'CLEAR', 'CLEAR', 'CLEAR', 'sm');
 K('inv', 'x<sup>-1</sup>', 'matrix', 'D', 'i:⁻¹', 'MATRIX', 'i:D');
@@ -3092,7 +3668,7 @@ K('on', 'on', 'off', '', 'ON', 'OFF', 'ON');
 K('n0', '0', 'catalog', '␣', 'i:0', 'CATALOG', 'i: ', 'num');
 K('dot', '.', 'i', ':', 'i:.', 'i:i', 'i::', 'num');
 K('neg', '(−)', 'ans', '?', 'i:⁻', 'i:Ans', 'i:?', 'num');
-K('enter', 'enter', 'entry', 'solve', 'ENTER', 'ENTRY', 'na:SOLVER', 'op enter');
+K('enter', 'enter', 'entry', 'solve', 'ENTER', 'ENTRY', 'SOLVE', 'op enter');
 K('up', '▲', 'bright', '', 'UP', 'BRIGHT+', 'UP');
 K('down', '▼', '', '', 'DOWN', 'BRIGHT-', 'DOWN');
 K('left', '◀', '', '', 'LEFT', 'LEFT', 'LEFT');
@@ -3109,10 +3685,20 @@ function press(id) {
     else S.alpha = true;
     S.blink = true; redraw(); return;
   }
+  if (S.run && S.run.active) {
+    if (id === 'on') {
+      const R = S.run, fr = R.frames[R.frames.length - 1]; R.active = false;
+      const st = fr && fr.st[Math.min(fr.pc, fr.st.length - 1)], name = fr && fr.name;
+      if (S.prun) { S.prun.input = null; S.prun.pause = null; S.prun.menu = null; }
+      showError('BREAK', name ? () => { openPedit(name); S.pedit.row = Math.min(st ? st.line : 0, S.pedit.lines.length - 1); } : null);
+      redraw(); return;
+    }
+    if (!S.prun.input && !S.prun.pause && !S.prun.menu) { S.run.lastKey = KEYCODE[id] || 0; return; }
+  }
   const catalog = S.screen === 'menu' && S.menu.def.catalog;
   let act;
   if (S.second) { act = k.s; S.second = false; }
-  else if (S.alpha || catalog) { act = k.a ?? k.p; if (S.alpha && !S.alphaLock) S.alpha = false; }
+  else if ((S.alpha || catalog) && !(S.alphaLock && id === 'enter')) { act = k.a ?? k.p; if (S.alpha && !S.alphaLock) S.alpha = false; }
   else act = k.p;
   try { doAction(act); }
   catch (e) { console.error(e); showError(e instanceof CalcError ? e.type : 'SYNTAX', null); }
@@ -3171,6 +3757,7 @@ window.addEventListener('keydown', e => {
   if (e.key === '!') { e.preventDefault(); doAction('i:!'); save(); redraw(); return; }
   if (!id && /^[a-zA-Z]$/.test(e.key)) {
     e.preventDefault();
+    if (S.run && S.run.active && !S.prun.input) return;
     if (e.key.toLowerCase() === 'x') { flash('xt'); press('xt'); return; }
     S.second = false; doAction('i:' + e.key.toUpperCase()); save(); redraw(); return;
   }
@@ -3194,7 +3781,7 @@ load();
 buildKeys();
 fit();
 redraw();
-window.__calc = { press, doAction, S, runLine, fmtNum, TESTS, openTest, runTest };
+window.__calc = { press, doAction, S, runLine, fmtNum, TESTS, openTest, runTest, strTokens };
 })();
 </script>
 </body>
