@@ -1229,7 +1229,8 @@ function runLine(toks) {
   else if (last === '►F◄►D') { frac = !S.lastWasFrac; t.pop(); }
   let mixed = false;
   if (t[t.length - 1] === '►n/d◄►Un/d') { mixed = true; frac = true; t.pop(); }
-  const autoFrac = S.mode.mp && t.some(x => x === '\u0001fr' || x === '\u0001mix');
+  const autoFrac = S.mode.mp && !S.mode.ans && t.some(x => x === '\u0001fr' || x === '\u0001mix');
+  if (autoFrac && S.mode.ftype) mixed = true;
   let store = null; const si = t.lastIndexOf('→');
   if (si >= 0) { store = parseStoreTarget(t.slice(si + 1)); t = t.slice(0, si); }
   if (!t.length) err('SYNTAX');
@@ -3314,13 +3315,15 @@ function openOpts(kind) {
     S.opts = {
       kind, r: 0, c: 0, note: 'ENTER selects a setting',
       rows: [
+        { opts: ['MATHPRINT', 'CLASSIC'], get: () => S.mode.mp ? 0 : 1, set: i => setMathPrint(i === 0) },
         { opts: ['NORMAL', 'SCI', 'ENG'], get: () => S.mode.notation, set: i => S.mode.notation = i },
         { opts: ['FLOAT', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], get: () => S.mode.fix + 1, set: i => S.mode.fix = i - 1 },
         { opts: ['RADIAN', 'DEGREE'], get: () => S.mode.angle, set: i => { S.mode.angle = i; S.graphDirty = true; } },
         { opts: ['FUNC', 'PAR', 'POL', 'SEQ'], get: () => GM(), set: i => { if (S.mode.graph !== i) { S.mode.graph = i; S.yeq.sel = 0; S.g.trace = null; S.table.fcol = 0; S.table.col = 0; } S.graphDirty = true; } },
         { opts: ['THICK', 'THIN', 'DOT'], get: () => S.mode.line, set: i => { S.mode.line = i; S.graphDirty = true; } },
         { opts: ['REAL', 'a+bi', 're^θi'], get: () => S.mode.cx, set: i => S.mode.cx = i },
-        { opts: ['MATHPRINT', 'CLASSIC'], get: () => S.mode.mp ? 0 : 1, set: i => setMathPrint(i === 0) },
+        { label: 'FRAC:', opts: ['n/d', 'Un/d'], get: () => S.mode.ftype || 0, set: i => S.mode.ftype = i },
+        { label: 'ANSWERS:', opts: ['AUTO', 'DEC'], get: () => S.mode.ans || 0, set: i => S.mode.ans = i },
       ],
     };
   } else {
@@ -4145,9 +4148,22 @@ const HANDLERS = {
   },
 };
 
+function rclTokens(tok) {
+  if (isVar(tok)) { const v = S.vars[tok] || 0; return isC(v) ? [...fmtC(v)].map(c => c === '-' ? '−' : c) : numTokens(v); }
+  if (isL(tok)) { const l = S.lists[+tok[1] - 1]; const out = ['{']; l.forEach((x, k) => { if (k) out.push(','); out.push(...numTokens(x)); }); out.push('}'); return out; }
+  if (isMt(tok)) { const m = S.mats[tok[1]]; if (!m) return []; const out = ['[']; m.forEach(r => { out.push('['); r.forEach((x, k) => { if (k) out.push(','); out.push(...numTokens(x)); }); out.push(']'); }); out.push(']'); return out; }
+  if (isY(tok)) return S.Y[YLAB.indexOf(tok[1])].ed.t.slice();
+  if (isStr(tok)) return S.strs[tok[3]] !== undefined ? strTokens(S.strs[tok[3]]) : [];
+  return null;
+}
 function doAction(a) {
   if (!a) return;
   S.blink = true;
+  if (S.rcl) {
+    if (a === 'CLEAR' || a === 'QUIT') { S.rcl = false; return; }
+    if (a.startsWith('i:')) { const tk = rclTokens(a.slice(2)); S.rcl = false; if (tk) { tk.forEach(insertTok); return; } }
+    else if (!['MATRIX', 'LIST', 'VARS'].includes(a)) S.rcl = false;
+  }
   if (a.startsWith('na:')) { toast(a.slice(3) + ' is not available in this web version'); return; }
   const h = HANDLERS[S.screen];
   if (h && h(a)) return;
@@ -4167,6 +4183,7 @@ function doAction(a) {
     case 'MATH': case 'TEST': case 'ANGLE': case 'DISTR': case 'VARS': case 'MEM': case 'CATALOG':
     case 'STAT': case 'LIST': case 'STATPLOT': case 'MATRIX': case 'PRGM': case 'DRAW': case 'APPS': openMenu(MENUS[a]()); return;
     case 'SOLVE': openSolver(); return;
+    case 'RCL': if (editorFor(S.screen)) { S.rcl = true; toast('Rcl: press a variable, list, matrix or Y= name', 2500); } return;
     case 'F1': case 'F2': case 'F3': case 'F4': openMenu(MENUS[a]()); return;
     case 'ON': goHome(); return;
     case 'OFF': S.off = true; S.second = S.alpha = S.alphaLock = false; return;
@@ -4217,7 +4234,7 @@ K('n4', '4', 'L4', 'T', 'i:4', 'i:L4', 'i:T', 'num');
 K('n5', '5', 'L5', 'U', 'i:5', 'i:L5', 'i:U', 'num');
 K('n6', '6', 'L6', 'V', 'i:6', 'i:L6', 'i:V', 'num');
 K('sub', '−', ']', 'W', 'i:−', 'i:]', 'i:W', 'op');
-K('sto', 'sto→', 'rcl', 'X', 'i:→', 'na:RCL', 'i:X');
+K('sto', 'sto→', 'rcl', 'X', 'i:→', 'RCL', 'i:X');
 K('n1', '1', 'L1', 'Y', 'i:1', 'i:L1', 'i:Y', 'num');
 K('n2', '2', 'L2', 'Z', 'i:2', 'i:L2', 'i:Z', 'num');
 K('n3', '3', 'L3', 'θ', 'i:3', 'i:L3', 'i:θ', 'num');
