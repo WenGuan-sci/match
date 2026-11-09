@@ -148,7 +148,7 @@ class Ed {
    ================================================================= */
 const DEFAULT_WIN = { xmin: -10, xmax: 10, xscl: 1, ymin: -10, ymax: 10, yscl: 1, xres: 1 };
 const S = {
-  mode: { notation: 0, fix: -1, angle: 0, line: 0 },
+  mode: { notation: 0, fix: -1, angle: 0, line: 0, cx: 0, graph: 0 },
   fmt: { coord: 0, grid: 0, axes: 0, label: 0 },
   win: { ...DEFAULT_WIN }, prevWin: null,
   tbl: { start: 0, step: 1 },
@@ -165,6 +165,8 @@ const S = {
   plots: [0, 1, 2].map(() => ({ on: false, type: 0, x: 0, y: 1, mark: 0 })),
   ledit: { col: 0, fcol: 0, row: 0, off: 0, ed: null },
   stat: null,
+  mats: {}, statVars: {},
+  medit: { n: 'A', row: -1, col: 0, fcol: 0, off: 0, ed: null },
 };
 const PLOTC = ['#1a5fd8', '#d8232c', '#151515'];
 for (const L of LETTERS) S.vars[L] = 0;
@@ -172,9 +174,9 @@ for (const L of LETTERS) S.vars[L] = 0;
 function save() {
   try {
     localStorage.setItem('ce-calc-v1', JSON.stringify({
-      mode: S.mode, fmt: S.fmt, win: S.win, tbl: S.tbl, vars: S.vars, ans: S.ans,
+      mode: S.mode, fmt: S.fmt, win: S.win, tbl: S.tbl, vars: Object.fromEntries(Object.entries(S.vars).map(([k, v]) => [k, isC(v) ? { re: v.re, im: v.im } : v])), ans: typeof S.ans === 'number' || Array.isArray(S.ans) ? S.ans : 0,
       Y: S.Y.map(y => ({ t: y.ed.t, on: y.on })), entries: S.entries.slice(-20),
-      lists: S.lists, plots: S.plots,
+      lists: S.lists, plots: S.plots, mats: S.mats,
     }));
   } catch (e) { /* storage unavailable */ }
 }
@@ -183,7 +185,9 @@ function load() {
     const d = JSON.parse(localStorage.getItem('ce-calc-v1') || 'null');
     if (!d) return;
     Object.assign(S.mode, d.mode); Object.assign(S.fmt, d.fmt); Object.assign(S.win, d.win); Object.assign(S.tbl, d.tbl);
-    Object.assign(S.vars, d.vars); if (typeof d.ans === 'number') S.ans = d.ans;
+    Object.entries(d.vars || {}).forEach(([k, v]) => { S.vars[k] = v && typeof v === 'object' ? new C(+v.re || 0, +v.im || 0) : +v || 0; });
+    if (typeof d.ans === 'number' || Array.isArray(d.ans)) S.ans = d.ans;
+    if (d.mats && typeof d.mats === 'object') Object.entries(d.mats).forEach(([k, m]) => { if (/^[A-J]$/.test(k) && Array.isArray(m) && m.length && m.every(r => Array.isArray(r) && r.length === m[0].length)) S.mats[k] = m; });
     if (Array.isArray(d.Y)) d.Y.forEach((y, i) => { if (S.Y[i] && Array.isArray(y.t)) { S.Y[i].ed.set(y.t); S.Y[i].on = !!y.on; } });
     if (Array.isArray(d.entries)) S.entries = d.entries.filter(Array.isArray);
     if (Array.isArray(d.lists)) d.lists.slice(0, 6).forEach((l, i) => { if (Array.isArray(l)) S.lists[i] = l.filter(v => typeof v === 'number' && isFinite(v)).slice(0, 999); });
@@ -236,14 +240,16 @@ function toFrac(v) {
   if (Number.isInteger(v)) return fmtNum(v);
   const r = ratApprox(v);
   if (!r) return fmtNum(v);
+  if (r.q === 1) return fmtNum(r.p);
   return (r.p < 0 ? '⁻' : '') + Math.abs(r.p) + '/' + r.q;
 }
 
 /* =================================================================
    Parser  (TI order of operations, implied multiplication)
    ================================================================= */
-const POSTFIX = new Set(['²', '³', '⁻¹', '!', '°', 'ʳ']);
-const CONSTS = new Set(['π', 'e', 'rand', 'Ans', ...Object.keys(WINVARS)]);
+const POSTFIX = new Set(['²', '³', '⁻¹', '!', '°', 'ʳ', 'ᵀ']);
+const STATVARS = { 'x̄': 1, 'Σx': 1, 'Σx²': 1, 'Sx': 1, 'σx': 1, 'n': 1, 'minX': 1, 'maxX': 1, 'Q1': 1, 'Med': 1, 'Q3': 1, 'ȳ': 1, 'Σy': 1, 'Σy²': 1, 'Σxy': 1, 'Sy': 1, 'σy': 1, 'minY': 1, 'maxY': 1, 'a': 1, 'b': 1, 'c': 1, 'd': 1, 'e ': 1, 'r': 1, 'r²': 1, 'R²': 1 };
+const CONSTS = new Set(['π', 'e', 'rand', 'Ans', 'i', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
 const RELOPS = new Set(['=', '≠', '>', '≥', '<', '≤']);
 const isY = t => /^Y[0-9]$/.test(t);
 const isVar = t => t.length === 1 && LETTERS.includes(t);
@@ -283,7 +289,7 @@ function parse(toks) {
     if (!l) return false;
     if (l.t === 'num') return true;
     const v = l.v;
-    return v === '(' || v === '{' || isFn(v) || CONSTS.has(v) || isVar(v) || isY(v) || isL(v) || v === '⁻';
+    return v === '(' || v === '{' || v === '[' || isMt(v) || isFn(v) || CONSTS.has(v) || isVar(v) || isY(v) || isL(v) || v === '⁻';
   };
   function pOr() { let a = pAnd(); while (is(' or ') || is(' xor ')) { const op = L[i++].v; a = { k: 'b', op, a, b: pAnd() }; } return a; }
   function pAnd() { let a = pRel(); while (is(' and ')) { i++; a = { k: 'b', op: ' and ', a, b: pRel() }; } return a; }
@@ -302,7 +308,21 @@ function parse(toks) {
   function pNeg() { if (is('⁻')) { i++; return { k: 'neg', a: pNeg() }; } return pPow(); }
   function pPowRhs() { if (is('⁻')) { i++; return { k: 'neg', a: pPowRhs() }; } return pPost(); }
   function pPow() { let a = pPost(); while (is('^') || is('ˣ√')) { const op = L[i++].v; a = { k: 'b', op, a, b: pPowRhs() }; } return a; }
-  function pPost() { let a = pPrim(); while (L[i] && L[i].t === 'tok' && POSTFIX.has(L[i].v)) a = { k: 'p', op: L[i++].v, a }; return a; }
+  function pPost() {
+    let a = pPrim();
+    while (L[i] && L[i].t === 'tok' && POSTFIX.has(L[i].v)) {
+      const op = L[i++].v;
+      // degrees°minutes'seconds" entry
+      if (op === '°' && L[i] && L[i].t === 'num' && L[i + 1] && L[i + 1].v === "'") {
+        const m = L[i].v; i += 2; let sec = 0;
+        if (L[i] && L[i].t === 'num' && L[i + 1] && L[i + 1].v === '"') { sec = L[i].v; i += 2; }
+        a = { k: 'p', op: '°', a: { k: 'b', op: '+', a, b: { k: 'n', v: m / 60 + sec / 3600 } } };
+        continue;
+      }
+      a = { k: 'p', op, a };
+    }
+    return a;
+  }
   function pPrim() {
     const l = L[i];
     if (!l) err('SYNTAX');
@@ -314,6 +334,18 @@ function parse(toks) {
       while (is(',')) { i++; items.push(pOr()); }
       if (is('}')) i++; else if (!(i >= L.length || is('→'))) err('SYNTAX');
       return { k: 'list', items };
+    }
+    if (v === '[') {
+      i++; const rows = [];
+      const close = () => { if (is(']')) i++; else if (!(i >= L.length || is('→'))) err('SYNTAX'); };
+      while (is('[')) { i++; const row = [pOr()]; while (is(',')) { i++; row.push(pOr()); } close(); rows.push(row); }
+      close(); if (!rows.length) err('SYNTAX');
+      return { k: 'mat', rows };
+    }
+    if (isMt(v)) {
+      i++;
+      if (is('(')) { i++; const r = pOr(); if (!is(',')) err('SYNTAX'); i++; const c = pOr(); closeParen(); return { k: 'M', n: v[1], r, c }; }
+      return { k: 'M', n: v[1] };
     }
     if (isL(v)) {
       i++; const li = +v[1] - 1;
@@ -344,10 +376,175 @@ function parse(toks) {
 /* =================================================================
    Evaluator
    ================================================================= */
-const chk = v => { if (Array.isArray(v)) return v.map(chk); if (Number.isNaN(v)) err('DOMAIN'); if (Math.abs(v) >= 1e100) err('OVERFLOW'); return v; };
-const num = v => { if (Array.isArray(v)) err('DATA TYPE'); return v; };
+const chk = v => {
+  if (Array.isArray(v)) return v.map(chk);
+  if (v instanceof Mat) { v.r.forEach(row => row.forEach(chk)); return v; }
+  if (v instanceof C) { chk(v.re); chk(v.im); return v; }
+  if (Number.isNaN(v)) err('DOMAIN'); if (Math.abs(v) >= 1e100) err('OVERFLOW'); return v;
+};
+const num = v => { if (typeof v !== 'number') err('DATA TYPE'); return v; };
+const numC = v => { if (typeof v !== 'number' && !(v instanceof C)) err('DATA TYPE'); return v; };
+
+/* ---- complex numbers ---- */
+class C { constructor(re, im) { this.re = re; this.im = im; } }
+const isC = v => v instanceof C;
+const toC = v => isC(v) ? v : typeof v === 'number' ? new C(v, 0) : err('DATA TYPE');
+function cn(re, im) {
+  const s = Math.max(Math.abs(re), Math.abs(im));
+  if (Math.abs(im) <= 1e-13 * s) return re;
+  if (Math.abs(re) <= 1e-13 * s) re = 0;
+  return new C(re, im);
+}
+const cmulC = (a, b) => new C(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
+function cdiv(a, b) { a = toC(a); b = toC(b); const d = b.re * b.re + b.im * b.im; if (d === 0) err('DIVIDE BY 0'); return cn((a.re * b.re + a.im * b.im) / d, (a.im * b.re - a.re * b.im) / d); }
+const cabs = z => Math.hypot(z.re, z.im), carg = z => Math.atan2(z.im, z.re);
+function cexp(z) { z = toC(z); const r = Math.exp(z.re); return cn(r * Math.cos(z.im), r * Math.sin(z.im)); }
+function cln(z) { z = toC(z); if (z.re === 0 && z.im === 0) err('DOMAIN'); return cn(Math.log(cabs(z)), carg(z)); }
+function cpow(a, b) {
+  a = toC(a); b = toC(b);
+  if (b.im === 0 && isInt(b.re) && Math.abs(b.re) <= 1024) {
+    let n = Math.round(b.re), r = new C(1, 0), base = a; const neg = n < 0; n = Math.abs(n);
+    while (n) { if (n & 1) r = cmulC(r, base); base = cmulC(base, base); n >>= 1; }
+    return neg ? cdiv(1, r) : cn(r.re, r.im);
+  }
+  if (a.re === 0 && a.im === 0) { if (b.re > 0) return 0; err('DOMAIN'); }
+  return cexp(cmulC(b, toC(cln(a))));
+}
+function cbin(op, a, b) {
+  a = toC(a); b = toC(b);
+  switch (op) {
+    case '+': return cn(a.re + b.re, a.im + b.im);
+    case '−': return cn(a.re - b.re, a.im - b.im);
+    case '×': { const z = cmulC(a, b); return cn(z.re, z.im); }
+    case '÷': return cdiv(a, b);
+    case '^': return cpow(a, b);
+    case 'ˣ√': return cpow(b, cdiv(1, a));
+    case '=': return near(a.re, b.re) && near(a.im, b.im) ? 1 : 0;
+    case '≠': return near(a.re, b.re) && near(a.im, b.im) ? 0 : 1;
+  }
+  err('DATA TYPE');
+}
+const CXFN = new Set(['real(', 'imag(', 'conj(', 'angle(']);
+function cxFn(name, a) {
+  need(a, 1, name === 'round(' ? 2 : 1);
+  const z = toC(a[0]);
+  switch (name) {
+    case 'real(': return z.re;
+    case 'imag(': return z.im;
+    case 'conj(': return cn(z.re, -z.im);
+    case 'angle(': return fromR(carg(z));
+    case 'abs(': return cabs(z);
+    case '√(': return cpow(z, 0.5);
+    case 'ln(': return cln(z);
+    case 'log(': return cdiv(cln(z), Math.LN10);
+    case 'e^(': return cexp(z);
+    case '10^(': return cpow(10, z);
+    case 'round(': { const d = a[1] ?? 9, r = x => scalarFn('round(', [x, d]); return cn(r(z.re), r(z.im)); }
+  }
+  err('DATA TYPE');
+}
+function fmtC(z, frac, polar) {
+  const f = x => frac ? toFrac(x) : fmtNum(x);
+  if (polar || S.mode.cx === 2) return f(cabs(z)) + 'e^(' + f(carg(z)) + 'i)';
+  const ai = Math.abs(z.im), mag = near(ai, 1) ? '' : f(ai);
+  if (z.re === 0) return (z.im < 0 ? '⁻' : '') + mag + 'i';
+  return f(z.re) + (z.im < 0 ? '-' : '+') + mag + 'i';
+}
+
+/* ---- matrices ---- */
+class Mat { constructor(r) { this.r = r; } get nr() { return this.r.length; } get nc() { return this.r[0].length; } }
+const isMat = v => v instanceof Mat;
+const isMt = t => /^\[[A-J]\]$/.test(t);
+const mOf = (r, c, f) => new Mat(Array.from({ length: r }, (_, i) => Array.from({ length: c }, (_, j) => f(i, j))));
+const mmap = (m, f) => new Mat(m.r.map(row => row.map(f)));
+const ident = n => mOf(n, n, (i, j) => i === j ? 1 : 0);
+const matArg = v => { if (!isMat(v)) err('DATA TYPE'); return v; };
+const dimOk = n => { if (!isInt(n) || n < 1 || n > 99) err('INVALID DIM'); return Math.round(n); };
+const tidy = x => Math.abs(x) < 1e-12 ? 0 : x;
+function mmul(a, b) { if (a.nc !== b.nr) err('DIM MISMATCH'); return mOf(a.nr, b.nc, (i, j) => { let s = 0; for (let k = 0; k < a.nc; k++) s += a.r[i][k] * b.r[k][j]; return s; }); }
+function mpow(m, n) { if (m.nr !== m.nc) err('INVALID DIM'); let r = ident(m.nr), b = m; while (n) { if (n & 1) r = mmul(r, b); b = mmul(b, b); n >>= 1; } return r; }
+function rowReduce(rows, ncols, full) {
+  const A = rows.map(r => r.slice()), nr = A.length;
+  const scale = Math.max(1e-300, ...A.flat().map(Math.abs));
+  let lead = 0;
+  for (let c = 0; c < ncols && lead < nr; c++) {
+    let p = lead; for (let r = lead + 1; r < nr; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (Math.abs(A[p][c]) <= 1e-12 * scale) continue;
+    [A[lead], A[p]] = [A[p], A[lead]];
+    const pv = A[lead][c]; A[lead] = A[lead].map(x => x / pv);
+    for (let r = 0; r < nr; r++) if (r !== lead && (full || r > lead)) { const f = A[r][c]; if (f) A[r] = A[r].map((x, j) => x - f * A[lead][j]); }
+    lead++;
+  }
+  return A.map(r => r.map(tidy));
+}
+function det(m) {
+  if (m.nr !== m.nc) err('INVALID DIM');
+  const A = m.r.map(r => r.slice()), n = m.nr; let d = 1;
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (A[p][c] === 0) return 0;
+    if (p !== c) { [A[c], A[p]] = [A[p], A[c]]; d = -d; }
+    d *= A[c][c];
+    for (let r = c + 1; r < n; r++) { const f = A[r][c] / A[c][c]; for (let j = c; j < n; j++) A[r][j] -= f * A[c][j]; }
+  }
+  return Math.abs(d) < 1e-10 * Math.max(1, ...m.r.flat().map(Math.abs)) ** n ? 0 : d;
+}
+function minv(m) {
+  if (m.nr !== m.nc) err('INVALID DIM');
+  const n = m.nr, R = rowReduce(m.r.map((row, i) => [...row, ...ident(n).r[i]]), n, true);
+  for (let i = 0; i < n; i++) if (Math.abs(R[i][i] - 1) > 1e-9) err('SINGULAR MAT');
+  return new Mat(R.map(row => row.slice(n)));
+}
+function matBin(op, a, b) {
+  const A = isMat(a), B = isMat(b);
+  if (isC(a) || isC(b)) err('DATA TYPE');
+  switch (op) {
+    case '+': case '−':
+      if (!A || !B) err('DATA TYPE'); if (a.nr !== b.nr || a.nc !== b.nc) err('DIM MISMATCH');
+      return mOf(a.nr, a.nc, (i, j) => op === '+' ? a.r[i][j] + b.r[i][j] : a.r[i][j] - b.r[i][j]);
+    case '×': if (A && B) return mmul(a, b); return A ? mmap(a, x => x * b) : mmap(b, x => a * x);
+    case '÷': if (A && !B) { if (b === 0) err('DIVIDE BY 0'); return mmap(a, x => x / b); } break;
+    case '^': if (A && !B) { if (!isInt(b) || b < 0 || b > 255) err('DOMAIN'); return mpow(a, Math.round(b)); } break;
+    case '=': case '≠': { const eq = A && B && a.nr === b.nr && a.nc === b.nc && a.r.every((row, i) => row.every((x, j) => near(x, b.r[i][j]))); return (op === '=') === eq ? 1 : 0; }
+  }
+  err('DATA TYPE');
+}
+function matFn(name, a) {
+  const m = a[0];
+  const rowIdx = (M, r) => { if (!isInt(r) || r < 1 || r > M.nr) err('INVALID DIM'); return Math.round(r) - 1; };
+  const copy = M => M.r.map(r => r.slice());
+  switch (name) {
+    case 'det(': need(a, 1); return det(matArg(m));
+    case 'identity(': need(a, 1); return ident(dimOk(m));
+    case 'randM(': need(a, 2); return mOf(dimOk(a[0]), dimOk(a[1]), () => Math.floor(Math.random() * 19) - 9);
+    case 'rref(': case 'ref(': need(a, 1); matArg(m); return new Mat(rowReduce(m.r, m.nc, name === 'rref('));
+    case 'rowSwap(': { need(a, 3); matArg(m); const R = copy(m), i = rowIdx(m, a[1]), j = rowIdx(m, a[2]); [R[i], R[j]] = [R[j], R[i]]; return new Mat(R); }
+    case 'row+(': { need(a, 3); matArg(m); const R = copy(m), i = rowIdx(m, a[1]), j = rowIdx(m, a[2]); R[j] = R[j].map((x, k) => x + R[i][k]); return new Mat(R); }
+    case '*row(': { need(a, 3); const M = matArg(a[1]), R = copy(M), i = rowIdx(M, a[2]); R[i] = R[i].map(x => num(a[0]) * x); return new Mat(R); }
+    case '*row+(': { need(a, 4); const M = matArg(a[1]), R = copy(M), i = rowIdx(M, a[2]), j = rowIdx(M, a[3]); R[j] = R[j].map((x, k) => x + num(a[0]) * R[i][k]); return new Mat(R); }
+    case 'dim(': if (isMat(m)) { need(a, 1); return [m.nr, m.nc]; } return undefined;
+    case 'augment(': if (isMat(m) || isMat(a[1])) { need(a, 2); const B = matArg(a[1]); matArg(m); if (m.nr !== B.nr) err('DIM MISMATCH'); return new Mat(m.r.map((r, i) => r.concat(B.r[i]))); } return undefined;
+    case 'cumSum(': if (isMat(m)) { need(a, 1); const R = copy(m); for (let i = 1; i < R.length; i++) R[i] = R[i].map((x, j) => x + R[i - 1][j]); return new Mat(R); } return undefined;
+    case 'abs(': case 'round(': case 'iPart(': case 'fPart(': case 'int(':
+      if (isMat(m)) return mmap(m, x => scalarFn(name, [x, ...a.slice(1)]));
+      return undefined;
+  }
+  return undefined;
+}
+function fmtMat(m, frac) {
+  const f = x => frac ? toFrac(x) : fmtNum(x);
+  const S2 = m.r.map(r => r.map(f));
+  const w = m.r[0].map((_, j) => Math.max(...S2.map(r => cells(r[j]).length)));
+  return S2.map((r, i) => (i === 0 ? '[' : ' ') + '[' + r.map((x, j) => ' '.repeat(w[j] - cells(x).length) + x).join(' ') + ']' + (i === S2.length - 1 ? ']' : '')).join('\n');
+}
+function fmtDMS(v) {
+  const neg = v < 0; let a = Math.abs(v), d = Math.floor(a), m = Math.floor((a - d) * 60), sec = ((a - d) * 60 - m) * 60;
+  sec = Math.round(sec * 1e6) / 1e6; if (sec >= 60) { sec -= 60; m++; } if (m >= 60) { m -= 60; d++; }
+  return (neg ? '⁻' : '') + d + '°' + m + "'" + fmtNum(sec) + '"';
+}
 // apply fn element-wise when any argument is a list
 function bcast(vals, fn) {
+  if (vals.some(Array.isArray) && vals.some(isMat)) err('DATA TYPE');
   let n = -1;
   for (const v of vals) if (Array.isArray(v)) { if (n >= 0 && v.length !== n) err('DIM MISMATCH'); n = v.length; }
   if (n < 0) return fn(vals);
@@ -364,6 +561,7 @@ const near = (a, b) => Math.abs(a - b) <= 1e-12 * Math.max(Math.abs(a), Math.abs
 function pow(a, b) {
   if (a === 0) { if (b > 0) return 0; err('DOMAIN'); }
   if (a < 0 && !isInt(b)) {
+    if (S.mode.cx) return cpow(a, b);
     const r = ratApprox(b, 1000, 1e-12);
     if (r && Math.abs(r.q) % 2 === 1) return chk((Math.abs(r.p) % 2 === 0 ? 1 : -1) * Math.pow(-a, b));
     err('NONREAL ANS');
@@ -380,6 +578,8 @@ function nCr(n, r) { if (n < 0 || r < 0 || !isInt(n) || !isInt(r)) err('DOMAIN')
 function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a; }
 
 function binop(op, a, b) {
+  if (isMat(a) || isMat(b)) return matBin(op, a, b);
+  if (isC(a) || isC(b)) return chk(cbin(op, a, b));
   switch (op) {
     case '+': return chk(a + b);
     case '−': return chk(a - b);
@@ -402,7 +602,16 @@ function binop(op, a, b) {
   err('SYNTAX');
 }
 function postop(op, a) {
+  if (isMat(a)) {
+    switch (op) { case '²': return mpow(a, 2); case '³': return mpow(a, 3); case '⁻¹': return minv(a); case 'ᵀ': return mOf(a.nc, a.nr, (i, j) => a.r[j][i]); }
+    err('DATA TYPE');
+  }
+  if (isC(a)) {
+    switch (op) { case '²': return cpow(a, 2); case '³': return cpow(a, 3); case '⁻¹': return cdiv(1, a); }
+    err('DATA TYPE');
+  }
   switch (op) {
+    case 'ᵀ': err('DATA TYPE');
     case '²': return chk(a * a);
     case '³': return chk(a * a * a);
     case '⁻¹': if (a === 0) err('DIVIDE BY 0'); return chk(1 / a);
@@ -418,7 +627,9 @@ function constVal(v) {
     case 'e': return Math.E;
     case 'rand': return Math.random();
     case 'Ans': return Array.isArray(S.ans) ? S.ans.slice() : S.ans;
+    case 'i': return new C(0, 1);
   }
+  if (v in STATVARS) { const x = S.statVars[v]; if (x === undefined) err('UNDEFINED'); return x; }
   if (v in WINVARS) return S.win[WINVARS[v]];
   err('SYNTAX');
 }
@@ -628,6 +839,8 @@ function callFn(name, args, env) {
     need(args, 4); return chk(golden(f, numA(2), numA(3), name === 'fMax('));
   }
   const vals = args.map(n => ev(n, env));
+  const mf = matFn(name, vals);
+  if (mf !== undefined) return mf;
   const lf = listFn(name, vals);
   if (lf !== undefined) return lf;
   return bcast(vals, a => scalarFn(name, a));
@@ -668,6 +881,8 @@ function listFn(name, a) {
 
 function scalarFn(name, a) {
   const x = a[0];
+  if (a.some(isMat)) err('DATA TYPE');
+  if (a.some(isC) || CXFN.has(name) || (S.mode.cx && x < 0 && (name === '√(' || name === 'ln(' || name === 'log('))) return cxFn(name, a);
   const one = () => need(a, 1);
   switch (name) {
     case 'sin(': one(); return snap(Math.sin(toR(x)));
@@ -701,6 +916,12 @@ function scalarFn(name, a) {
     case 'remainder(': need(a, 2); if (a[1] === 0) err('DIVIDE BY 0'); return a[0] - a[1] * Math.floor(a[0] / a[1]);
     case 'randInt(': { need(a, 2); if (!isInt(a[0]) || !isInt(a[1])) err('DOMAIN'); const lo = Math.min(a[0], a[1]), hi = Math.max(a[0], a[1]); return Math.round(lo) + Math.floor(Math.random() * (Math.round(hi) - Math.round(lo) + 1)); }
     case 'not(': one(); return x === 0 ? 1 : 0;
+    case 'R►Pr(': need(a, 2); return Math.hypot(a[0], a[1]);
+    case 'R►Pθ(': need(a, 2); return fromR(Math.atan2(a[1], a[0]));
+    case 'P►Rx(': need(a, 2); return snap(a[0] * Math.cos(toR(a[1])));
+    case 'P►Ry(': need(a, 2); return snap(a[0] * Math.sin(toR(a[1])));
+    case 'randNorm(': need(a, 2); { let u = 0, v = 0; while (!u) u = Math.random(); v = Math.random(); return a[0] + a[1] * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+    case 'randBin(': { need(a, 2); if (!isInt(a[0]) || a[0] < 0 || a[1] < 0 || a[1] > 1) err('DOMAIN'); let k = 0; for (let i = 0; i < a[0]; i++) if (Math.random() < a[1]) k++; return k; }
     case 'normalpdf(': { need(a, 1, 3); const mu = a[1] ?? 0, sg = a[2] ?? 1; if (sg <= 0) err('DOMAIN'); const z = (x - mu) / sg; return Math.exp(-z * z / 2) / (sg * Math.sqrt(2 * Math.PI)); }
     case 'normalcdf(': need(a, 2, 4); return normcdf(a[0], a[1], a[2] ?? 0, a[3] ?? 1);
     case 'invNorm(': need(a, 1, 3); return invNorm(a[0], a[1] ?? 0, a[2] ?? 1);
@@ -726,11 +947,21 @@ function ev(n, env) {
     case 'n': return n.v;
     case 'v': return env && n.v in env ? env[n.v] : (S.vars[n.v] || 0);
     case 'c': return constVal(n.v);
-    case 'neg': return bcast([ev(n.a, env)], ([a]) => -a);
+    case 'neg': return bcast([ev(n.a, env)], ([a]) => isMat(a) ? mmap(a, x => -x) : isC(a) ? cn(-a.re, -a.im) : -a);
     case 'b': return bcast([ev(n.a, env), ev(n.b, env)], ([a, b]) => binop(n.op, a, b));
     case 'p': return bcast([ev(n.a, env)], ([a]) => postop(n.op, a));
     case 'f': return chk(callFn(n.name, n.args, env));
-    case 'list': return n.items.map(it => num(ev(it, env)));
+    case 'list': return n.items.map(it => numC(ev(it, env)));
+    case 'mat': {
+      const rows = n.rows.map(r => r.map(it => num(ev(it, env))));
+      if (rows.some(r => r.length !== rows[0].length)) err('INVALID DIM');
+      return new Mat(rows);
+    }
+    case 'M': {
+      const m = S.mats[n.n]; if (!m) err('UNDEFINED');
+      if (n.r) { const r = num(ev(n.r, env)), c = num(ev(n.c, env)); if (!isInt(r) || !isInt(c) || r < 1 || c < 1 || r > m.length || c > m[0].length) err('INVALID DIM'); return m[r - 1][c - 1]; }
+      return new Mat(m.map(r => r.slice()));
+    }
     case 'L': {
       const arr = S.lists[n.i];
       if (n.idx) { const k = num(ev(n.idx, env)); if (!isInt(k) || k < 1 || k > arr.length) err('INVALID DIM'); return arr[Math.round(k) - 1]; }
@@ -762,13 +993,20 @@ function setVar(name, v) {
   if (name in WINVARS) { S.win[WINVARS[name]] = v; S.graphDirty = true; }
   else S.vars[name] = v;
 }
-function showVal(v, frac) {
-  const f = x => frac ? toFrac(x) : fmtNum(x);
+function showVal(v, frac, mode) {
+  if (isMat(v)) return fmtMat(v, frac);
+  const f = x => isC(x) ? fmtC(x, frac, mode === 'polar') : mode === 'dms' ? fmtDMS(x) : mode === 'polar' && x < 0 ? fmtC(new C(x, 0), frac, true) : frac ? toFrac(x) : fmtNum(x);
   return Array.isArray(v) ? '{' + v.map(f).join(' ') + '}' : f(v);
 }
 function parseStoreTarget(rest) {
   if (rest.length === 1 && STORABLE.has(rest[0])) return { name: rest[0] };
   if (rest.length === 1 && isL(rest[0])) return { list: +rest[0][1] - 1 };
+  if (rest.length === 1 && isMt(rest[0])) return { mat: rest[0][1] };
+  if (rest.length >= 5 && isMt(rest[0]) && rest[1] === '(') {
+    let inner = rest.slice(2); if (inner[inner.length - 1] === ')') inner = inner.slice(0, -1);
+    const parts = splitArgs(inner); if (parts.length !== 2) err('SYNTAX');
+    return { mat: rest[0][1], r: parts[0], c: parts[1] };
+  }
   if (rest.length >= 3 && isL(rest[0]) && rest[1] === '(') {
     let inner = rest.slice(2); if (inner[inner.length - 1] === ')') inner = inner.slice(0, -1);
     return { list: +rest[0][1] - 1, idx: inner };
@@ -776,7 +1014,16 @@ function parseStoreTarget(rest) {
   err('SYNTAX');
 }
 function doStore(s, v) {
-  if (s.name) { setVar(s.name, num(v)); return; }
+  if (s.name) { setVar(s.name, s.name in WINVARS ? num(v) : numC(v)); return; }
+  if (s.mat) {
+    if (s.r) {
+      const m = S.mats[s.mat]; if (!m) err('UNDEFINED');
+      const r = evalTokens(s.r), c = evalTokens(s.c);
+      if (!isInt(r) || !isInt(c) || r < 1 || c < 1 || r > m.length || c > m[0].length) err('INVALID DIM');
+      m[r - 1][c - 1] = num(v); return;
+    }
+    S.mats[s.mat] = matArg(v).r.map(r => r.slice()); return;
+  }
   const l = S.lists[s.list];
   if (s.idx) {
     const k = evalTokens(s.idx);
@@ -790,21 +1037,24 @@ function doStore(s, v) {
 function runLine(toks) {
   if (COMMANDS.has(toks[0])) return runCommand(toks[0], toks.slice(1));
   let t = toks.slice(), frac = false;
-  if (t[t.length - 1] === '►Frac') { frac = true; t.pop(); } else if (t[t.length - 1] === '►Dec') t.pop();
+  let mode = null;
+  const last = t[t.length - 1];
+  if (last === '►Frac') { frac = true; t.pop(); } else if (last === '►Dec') t.pop();
+  else if (last === '►DMS') { mode = 'dms'; t.pop(); } else if (last === '►Rect') { mode = 'rect'; t.pop(); } else if (last === '►Polar') { mode = 'polar'; t.pop(); }
   let store = null; const si = t.lastIndexOf('→');
   if (si >= 0) { store = parseStoreTarget(t.slice(si + 1)); t = t.slice(0, si); }
   if (!t.length) err('SYNTAX');
   const v = evalAny(t);
   if (store) doStore(store, v);
   S.ans = v;
-  return showVal(v, frac);
+  return showVal(v, frac, mode);
 }
 
 /* =================================================================
    STAT commands: sorting, 1/2-Var Stats, regressions
    ================================================================= */
 const REGS = ['LinReg(ax+b) ', 'QuadReg ', 'CubicReg ', 'QuartReg ', 'LinReg(a+bx) ', 'LnReg ', 'ExpReg ', 'PwrReg '];
-const COMMANDS = new Set(['SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
+const COMMANDS = new Set(['Matr►list(', 'List►matr(', 'SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
 function splitArgs(t) {
   const out = []; let cur = [], d = 0;
   for (const x of t) {
@@ -828,6 +1078,7 @@ function oneVar(l, f) {
   const sx = sumOf(d), sx2 = sumOf(d.map(x => x * x)), m = sx / n;
   const ss = sumOf(d.map(x => (x - m) * (x - m)));
   const [q1, med, q3] = quart(s);
+  Object.assign(S.statVars, { 'x̄': m, 'Σx': sx, 'Σx²': sx2, 'Sx': n > 1 ? Math.sqrt(ss / (n - 1)) : undefined, 'σx': Math.sqrt(ss / n), n, minX: s[0], maxX: s[n - 1], Q1: q1, Med: med, Q3: q3 });
   return { title: '1-Var Stats', lines: [
     'x̄=' + SF(m), 'Σx=' + SF(sx), 'Σx²=' + SF(sx2), 'Sx=' + (n > 1 ? SF(Math.sqrt(ss / (n - 1))) : ''), 'σx=' + SF(Math.sqrt(ss / n)),
     'n=' + SF(n), 'minX=' + SF(s[0]), 'Q1=' + SF(q1), 'Med=' + SF(med), 'Q3=' + SF(q3), 'maxX=' + SF(s[n - 1]),
@@ -847,6 +1098,7 @@ function twoVar(xs, ys, f) {
   const [X, Y] = pairs(xs, ys, f), n = X.length;
   const st = d => { const s = sumOf(d), m = s / n, ss = sumOf(d.map(v => (v - m) * (v - m))); return { s, m, s2: sumOf(d.map(v => v * v)), Sx: n > 1 ? Math.sqrt(ss / (n - 1)) : NaN, sg: Math.sqrt(ss / n), mn: Math.min(...d), mx: Math.max(...d) }; };
   const a = st(X), b = st(Y);
+  Object.assign(S.statVars, { 'x̄': a.m, 'Σx': a.s, 'Σx²': a.s2, 'Sx': a.Sx, 'σx': a.sg, 'ȳ': b.m, 'Σy': b.s, 'Σy²': b.s2, 'Sy': b.Sx, 'σy': b.sg, 'Σxy': sumOf(X.map((x, i) => x * Y[i])), n, minX: a.mn, maxX: a.mx, minY: b.mn, maxY: b.mx });
   return { title: '2-Var Stats', lines: [
     'x̄=' + SF(a.m), 'Σx=' + SF(a.s), 'Σx²=' + SF(a.s2), 'Sx=' + SF(a.Sx), 'σx=' + SF(a.sg),
     'ȳ=' + SF(b.m), 'Σy=' + SF(b.s), 'Σy²=' + SF(b.s2), 'Sy=' + SF(b.Sx), 'σy=' + SF(b.sg),
@@ -917,6 +1169,10 @@ function regress(cmd, xs, ys, f) {
     }
   }
   coef.forEach(([k, v]) => lines.push(k + '=' + SF(v)));
+  ['a', 'b', 'c', 'd', 'e '].forEach(k => delete S.statVars[k]);
+  coef.forEach(([k, v]) => { S.statVars[k === 'e' ? 'e ' : k] = v; });
+  S.statVars['r²'] = r !== undefined ? rr : undefined; S.statVars['R²'] = r === undefined ? rr : undefined; S.statVars.r = r;
+  S.regEQ = eq;
   lines.push(rlabel + '=' + SF(rr));
   if (r !== undefined) lines.push('r=' + SF(r));
   return { title: name, lines, eq };
@@ -1140,7 +1396,21 @@ function runCommand(cmd, rest) {
       return 'Done';
     }
     case 'ClrList ': if (!args.length) err('SYNTAX'); args.map(argListRef).forEach(r => { S.lists[r] = []; }); S.graphDirty = true; return 'Done';
-    case 'Fill(': { if (args.length !== 2) err('ARGUMENT'); const v = evalTokens(args[0]); const r = argListRef(args[1]); S.lists[r] = S.lists[r].map(() => v); return 'Done'; }
+    case 'Fill(': {
+      if (args.length !== 2) err('ARGUMENT'); const v = evalTokens(args[0]);
+      if (args[1].length === 1 && isMt(args[1][0])) { const m = S.mats[args[1][0][1]]; if (!m) err('UNDEFINED'); m.forEach(r => r.fill(v)); return 'Done'; }
+      const r = argListRef(args[1]); S.lists[r] = S.lists[r].map(() => v); return 'Done';
+    }
+    case 'List►matr(': {
+      if (args.length < 2) err('ARGUMENT'); const tgt = args.pop(); if (tgt.length !== 1 || !isMt(tgt[0])) err('SYNTAX');
+      const cols = args.map(argList); const n = Math.max(...cols.map(c => c.length));
+      if (n > 99 || cols.length > 99) err('INVALID DIM');
+      S.mats[tgt[0][1]] = Array.from({ length: n }, (_, i) => cols.map(c => num(c[i] ?? 0))); return 'Done';
+    }
+    case 'Matr►list(': {
+      if (args.length < 2) err('ARGUMENT'); const m = matArg(evalAny(args[0]));
+      args.slice(1).forEach((a, j) => { const r = argListRef(a); if (j >= m.nc) err('INVALID DIM'); S.lists[r] = m.r.map(row => row[j]); }); return 'Done';
+    }
     case '1-Var Stats ': return { stat: oneVar(args[0] ? argList(args[0]) : S.lists[0].slice(), args[1] ? argList(args[1]) : undefined) };
     case 'ANOVA(': return { stat: anova(args.map(argList)) };
     case '2-Var Stats ': return { stat: twoVar(args[0] ? argList(args[0]) : S.lists[0].slice(), args[1] ? argList(args[1]) : S.lists[1].slice(), args[2] ? argList(args[2]) : undefined) };
@@ -1189,7 +1459,7 @@ function drawStatus() {
   ctx.fillStyle = '#b8bec8'; ctx.fillRect(0, SB - 1, W, 1);
   ctx.font = SMALL; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#2b4f8a';
   const m = S.mode;
-  const txt = [['NORMAL', 'SCI', 'ENG'][m.notation], m.fix < 0 ? 'FLOAT' : 'FIX' + m.fix, 'AUTO', 'REAL', m.angle ? 'DEGREE' : 'RADIAN', 'CL'].join(' ');
+  const txt = [['NORMAL', 'SCI', 'ENG'][m.notation], m.fix < 0 ? 'FLOAT' : 'FIX' + m.fix, 'AUTO', ['REAL', 'a+bi', 're^θi'][m.cx], m.angle ? 'DEGREE' : 'RADIAN', 'CL'].join(' ');
   ctx.fillText(txt, 5, SB / 2 + 0.5);
   let x = W - 30;
   if (S.second || S.alpha) {
@@ -1352,9 +1622,10 @@ const ERRHELP = {
   'MEMORY': 'Too much recursion or work.',
   'TOL NOT MET': 'Could not reach the required accuracy.',
   'DIM MISMATCH': 'Lists must be the same length. If a stat plot is on, check its lists.',
-  'INVALID DIM': 'A list is empty or that element doesn\'t exist. Check STAT PLOT too.',
+  'INVALID DIM': 'Wrong size: an empty list, a missing element, a non-square matrix, or a stat plot list.',
   'DATA TYPE': 'Expected a number but got a list, or the other way round.',
   'STAT': 'Not enough different data points for this calculation.',
+  'SINGULAR MAT': 'This matrix has no inverse (its determinant is 0).',
 };
 function wrapWords(s, n) { const out = []; let cur = ''; for (const w of s.split(' ')) { if ((cur + ' ' + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) out.push(cur.trim()); return out; }
 
@@ -1607,6 +1878,68 @@ function leditCommit() {
   }
 }
 
+/* ---- matrix editor ---- */
+function openMedit(n) {
+  closeGraphState();
+  if (!S.mats[n]) S.mats[n] = [[0]];
+  Object.assign(S.medit, { n, row: -1, col: 0, fcol: 0, off: 0, ed: null });
+  S.screen = 'medit';
+}
+function drawMedit() {
+  const M = S.medit, m = S.mats[M.n], nr = m.length, nc = m[0].length, colW = W / 3, rowsVis = 7, rh = 22;
+  if (M.row >= 0) {
+    M.row = Math.min(M.row, nr - 1); M.col = Math.min(M.col, nc - 1);
+    if (M.col < M.fcol) M.fcol = M.col; if (M.col > M.fcol + 2) M.fcol = M.col - 2;
+    if (M.row < M.off) M.off = M.row; if (M.row >= M.off + rowsVis) M.off = M.row - rowsVis + 1;
+  }
+  drawStr('MATRIX[' + M.n + ']', 0, 0, { color: '#2b4f8a' });
+  const dims = [String(nr), String(nc)];
+  let c = 11;
+  dims.forEach((d, k) => {
+    const here = M.row < 0 && M.col === k;
+    if (here && M.ed) { drawStr(M.ed.str(), 0, c); drawCursor(0, c + M.ed.curChar(), undefined); c += Math.max(2, M.ed.t.length + 1); }
+    else { drawStr(d, 0, c, here ? { bg: '#111' } : {}); c += d.length; }
+    if (k === 0) { drawStr('×', 0, c + 1); c += 3; }
+  });
+  ctx.font = SANS; ctx.textBaseline = 'middle';
+  const top = SB + LH + 2;
+  for (let r = 0; r < rowsVis; r++) {
+    const i = M.off + r; if (i >= nr) break;
+    for (let k = 0; k < 3; k++) {
+      const j = M.fcol + k; if (j >= nc) break;
+      const cy = top + r * rh + rh / 2, sel = M.row === i && M.col === j;
+      if (sel) { ctx.fillStyle = M.ed ? '#cfe0f7' : '#2b6cc4'; ctx.fillRect(k * colW + 1, cy - rh / 2 + 1, colW - 2, rh - 1); }
+      ctx.fillStyle = sel && !M.ed ? '#fff' : '#111'; ctx.textAlign = 'center';
+      ctx.fillText(fitNum(m[i][j], colW - 10), k * colW + colW / 2, cy + 1);
+    }
+  }
+  ctx.strokeStyle = '#c3c8d0'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(2.5, top); ctx.lineTo(2.5, top + Math.min(nr, rowsVis) * rh); ctx.moveTo(W - 2.5, top); ctx.lineTo(W - 2.5, top + Math.min(nr, rowsVis) * rh); ctx.stroke();
+  ctx.fillStyle = '#eef1f5'; ctx.fillRect(0, H - 22, W, 22);
+  if (M.row >= 0) {
+    const label = M.n + '(' + (M.row + 1) + ',' + (M.col + 1) + ')=';
+    const text = label + (M.ed ? M.ed.str() : fmtNum(m[M.row][M.col]));
+    ctx.font = SANS; ctx.textAlign = 'left'; ctx.fillStyle = '#111'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(text, 6, H - 7, W - 12);
+    if (M.ed && S.blink) { const x = 6 + ctx.measureText(label + M.ed.t.slice(0, M.ed.c).join('')).width; ctx.fillRect(Math.min(x, W - 6), H - 19, 2, 16); }
+  }
+}
+function meditCommit() {
+  const M = S.medit, ed = M.ed; if (!ed) return true;
+  if (!ed.t.length) { M.ed = null; return true; }
+  try {
+    const v = evalTokens(ed.t), m = S.mats[M.n];
+    if (M.row < 0) {
+      const n = dimOk(v), r = M.col === 0 ? n : m.length, c = M.col === 1 ? n : m[0].length;
+      S.mats[M.n] = Array.from({ length: r }, (_, i) => Array.from({ length: c }, (_, j) => (m[i] && m[i][j] !== undefined) ? m[i][j] : 0));
+    } else m[M.row][M.col] = v;
+    M.ed = null; return true;
+  } catch (e) {
+    if (!(e instanceof CalcError)) throw e;
+    const keep = ed.t.slice(); showError(e.type, () => { S.screen = 'medit'; M.ed = new Ed(keep); }); return false;
+  }
+}
+
 /* ---- stat results ---- */
 function drawStatScr() {
   const st = S.stat, vis = ROWS - 1;
@@ -1830,6 +2163,7 @@ function draw() {
     case 'graph': drawGraph(); break;
     case 'table': drawTable(); break;
     case 'ledit': drawLedit(); break;
+    case 'medit': drawMedit(); break;
     case 'stat': drawStatScr(); break;
     case 'test': drawTest(); break;
     case 'tdraw': drawTDraw(); break;
@@ -1913,7 +2247,7 @@ function openOpts(kind) {
         { opts: ['RADIAN', 'DEGREE'], get: () => S.mode.angle, set: i => { S.mode.angle = i; S.graphDirty = true; } },
         { opts: ['FUNCTION'], get: () => 0, set: () => {} },
         { opts: ['THICK', 'THIN', 'DOT'], get: () => S.mode.line, set: i => { S.mode.line = i; S.graphDirty = true; } },
-        { opts: ['REAL'], get: () => 0, set: () => {} },
+        { opts: ['REAL', 'a+bi', 're^θi'], get: () => S.mode.cx, set: i => S.mode.cx = i },
         { opts: ['CLASSIC'], get: () => 0, set: () => {} },
       ],
     };
@@ -1936,6 +2270,7 @@ function openMenu(def) {
   let ret;
   if (def.home) ret = 'home';
   else if (S.screen === 'ledit') { if (!S.ledit.ed) S.ledit.ed = new Ed([]); ret = 'ledit'; }
+  else if (S.screen === 'medit') { if (!S.medit.ed) S.medit.ed = new Ed([]); ret = 'medit'; }
   else ret = editorFor(S.screen) ? S.screen : (def.keepScreen ? S.screen : 'home');
   if (S.screen === 'ledit' && def.home && !leditCommit()) return;
   if (S.screen === 'graph' && !def.keepScreen) closeGraphState();
@@ -2088,17 +2423,24 @@ const MENUS = {
   MATH: () => ({ tabs: mkTabs([
     { title: 'MATH', items: [T('►Frac'), T('►Dec'), T('³'), T('³√('), T('ˣ√', 'ˣ√'), T('fMin('), T('fMax('), T('nDeriv('), T('fnInt('), T('Σ('), T('logBASE(')] },
     { title: 'NUM', items: [T('abs('), T('round('), T('iPart('), T('fPart('), T('int('), T('min('), T('max('), T('lcm('), T('gcd('), T('remainder(')] },
-    { title: 'PROB', items: [T('rand'), T(' nPr ', 'nPr'), T(' nCr ', 'nCr'), T('!'), T('randInt(')] },
+    { title: 'CPX', items: [T('conj('), T('real('), T('imag('), T('angle('), T('abs('), T('►Rect'), T('►Polar')] },
+    { title: 'PROB', items: [T('rand'), T(' nPr ', 'nPr'), T(' nCr ', 'nCr'), T('!'), T('randInt('), T('randNorm('), T('randBin(')] },
   ]) }),
   TEST: () => ({ tabs: mkTabs([
     { title: 'TEST', items: [T('='), T('≠'), T('>'), T('≥'), T('<'), T('≤')] },
     { title: 'LOGIC', items: [T(' and ', 'and'), T(' or ', 'or'), T(' xor ', 'xor'), T('not(')] },
   ]) }),
-  ANGLE: () => ({ tabs: mkTabs([{ title: 'ANGLE', items: [T('°'), T('ʳ')] }]) }),
+  ANGLE: () => ({ tabs: mkTabs([{ title: 'ANGLE', items: [T('°'), T("'"), T('ʳ'), T('►DMS'), T('R►Pr('), T('R►Pθ('), T('P►Rx('), T('P►Ry(')] }]) }),
+  MATRIX: () => ({ tabs: mkTabs([
+    { title: 'NAMES', items: 'ABCDEFGHIJ'.split('').map(k => T('[' + k + ']', '[' + k + ']' + (S.mats[k] ? ' ' + S.mats[k].length + '×' + S.mats[k][0].length : ''))) },
+    { title: 'MATH', items: [T('det('), T('ᵀ'), T('dim('), T('Fill('), T('identity('), T('randM('), T('augment('), T('Matr►list('), T('List►matr('), T('cumSum('), T('ref('), T('rref('), T('rowSwap('), T('row+('), T('*row('), T('*row+(')] },
+    { title: 'EDIT', items: 'ABCDEFGHIJ'.split('').map(k => ({ label: '[' + k + ']' + (S.mats[k] ? ' ' + S.mats[k].length + '×' + S.mats[k][0].length : ''), act: () => openMedit(k) })) },
+  ]) }),
   DISTR: () => ({ tabs: mkTabs([{ title: 'DISTR', items: [T('normalpdf('), T('normalcdf('), T('invNorm('), T('invT('), T('tpdf('), T('tcdf('), T('χ²pdf('), T('χ²cdf('), T('Fpdf('), T('Fcdf('), T('binompdf('), T('binomcdf('), T('poissonpdf('), T('poissoncdf('), T('geometpdf('), T('geometcdf(')] }]) }),
   VARS: () => ({ tabs: mkTabs([
     { title: 'VARS', items: Object.keys(WINVARS).map(k => T(k)) },
     { title: 'Y-VARS', items: YLAB.map(d => T('Y' + d)) },
+    { title: 'STAT', items: [...Object.keys(STATVARS).map(k => T(k, k.trim())), { label: 'RegEQ', act: () => { S.screen = S.menu.ret; if (!S.regEQ) { toast('Run a regression first'); return; } S.regEQ.forEach(insertTok); } }] },
   ]) }),
   ZOOM: () => ({ keepScreen: true, tabs: mkTabs([
     { title: 'ZOOM', items: [
@@ -2155,13 +2497,13 @@ const MENUS = {
 };
 
 function resetAll() {
-  Object.assign(S.mode, { notation: 0, fix: -1, angle: 0, line: 0 });
+  Object.assign(S.mode, { notation: 0, fix: -1, angle: 0, line: 0, cx: 0, graph: 0 });
   Object.assign(S.fmt, { coord: 0, grid: 0, axes: 0, label: 0 });
   Object.assign(S.win, DEFAULT_WIN); S.tbl.start = 0; S.tbl.step = 1;
   for (const L of LETTERS) S.vars[L] = 0; S.ans = 0;
   S.Y.forEach(y => { y.ed.clear(); y.on = true; y.ast = undefined; });
   S.hist = []; S.entries = []; S.homeEd.clear(); S.graphDirty = true;
-  S.lists = [[], [], [], [], [], []];
+  S.lists = [[], [], [], [], [], []]; S.mats = {}; S.statVars = {};
   S.plots.forEach(p => Object.assign(p, { on: false, type: 0, x: 0, y: 1, mark: 0 }));
 }
 
@@ -2175,6 +2517,7 @@ function editorFor(screen) {
   if (screen === 'form') return S.form && S.form.ed;
   if (screen === 'graph' && S.g.prompt) return S.g.prompt.ed;
   if (screen === 'ledit') return S.ledit.ed;
+  if (screen === 'medit') return S.medit.ed;
   if (screen === 'test') return S.test && S.test.ed;
   return null;
 }
@@ -2186,6 +2529,7 @@ function insertTok(tok) {
   if (S.screen === 'yeq' && S.yeq.onEq) { S.yeq.onEq = false; S.Y[S.yeq.sel].ed.c = 0; }
   if (S.screen === 'yeq' && S.yeq.plot != null) return;
   if (S.screen === 'ledit' && !S.ledit.ed) S.ledit.ed = new Ed([]);
+  if (S.screen === 'medit' && !S.medit.ed) S.medit.ed = new Ed([]);
   const ed = editorFor(S.screen);
   if (!ed) return;
   if (S.screen === 'home' && ed.t.length === 0 && ANS_OPS.has(tok)) ed.ins('Ans');
@@ -2209,7 +2553,8 @@ function homeEnter() {
       S.screen = 'stat';
       return;
     }
-    S.hist.push({ t: toks.join(''), a: 'L' }, { t: r, a: 'R' });
+    S.hist.push({ t: toks.join(''), a: 'L' });
+    String(r).split('\n').forEach(line => S.hist.push({ t: line, a: 'R' }));
     if (S.hist.length > 80) S.hist.splice(0, S.hist.length - 80);
     ed.clear();
   } catch (e) {
@@ -2430,6 +2775,36 @@ const HANDLERS = {
     }
     return false;
   },
+  medit(a) {
+    const M = S.medit, m = () => S.mats[M.n];
+    const nr = () => m().length, nc = () => m()[0].length;
+    if (M.ed) {
+      switch (a) {
+        case 'LEFT': M.ed.left(); return true;
+        case 'RIGHT': M.ed.right(); return true;
+        case 'CLEAR': if (M.ed.t.length) M.ed.clear(); else M.ed = null; return true;
+        case 'DEL': M.ed.del(); return true;
+        case 'BS': M.ed.bs(); return true;
+      }
+      if (a.startsWith('i:')) return false;
+      if (!meditCommit()) return true;
+      if (a === 'ENTER') {
+        if (M.row < 0) { if (M.col === 0) M.col = 1; else { M.row = 0; M.col = 0; } }
+        else if (M.col < nc() - 1) M.col++; else if (M.row < nr() - 1) { M.row++; M.col = 0; }
+        return true;
+      }
+    }
+    switch (a) {
+      case 'UP': if (M.row > 0) M.row--; else if (M.row === 0) { M.row = -1; M.col = 0; } return true;
+      case 'DOWN': if (M.row < nr() - 1) { M.row++; if (M.row === 0) M.col = 0; } return true;
+      case 'LEFT': if (M.col > 0) M.col--; return true;
+      case 'RIGHT': if (M.col < (M.row < 0 ? 1 : nc() - 1)) M.col++; return true;
+      case 'ENTER': if (M.row < 0) { if (M.col === 0) M.col = 1; else { M.row = 0; M.col = 0; } } else if (M.col < nc() - 1) M.col++; else if (M.row < nr() - 1) { M.row++; M.col = 0; } return true;
+      case 'CLEAR': goHome(); return true;
+      case 'DEL': case 'BS': return true;
+    }
+    return false;
+  },
   stat(a) {
     const st = S.stat;
     switch (a) {
@@ -2498,7 +2873,7 @@ function doAction(a) {
     case 'TABLE': openTable(); return;
     case 'MODE': openOpts('mode'); return;
     case 'MATH': case 'TEST': case 'ANGLE': case 'DISTR': case 'VARS': case 'MEM': case 'CATALOG':
-    case 'STAT': case 'LIST': case 'STATPLOT': openMenu(MENUS[a]()); return;
+    case 'STAT': case 'LIST': case 'STATPLOT': case 'MATRIX': openMenu(MENUS[a]()); return;
     case 'ON': goHome(); return;
     case 'OFF': S.off = true; S.second = S.alpha = S.alphaLock = false; return;
     case 'INS': toast('Insert mode is always on'); return;
@@ -2527,7 +2902,7 @@ K('apps', 'apps', 'angle', 'B', 'na:APPS', 'ANGLE', 'i:B', 'sm');
 K('prgm', 'prgm', 'draw', 'C', 'na:PRGM', 'na:DRAW', 'i:C', 'sm');
 K('vars', 'vars', 'distr', '', 'VARS', 'DISTR', 'VARS', 'sm');
 K('clear', 'clear', '', '', 'CLEAR', 'CLEAR', 'CLEAR', 'sm');
-K('inv', 'x<sup>-1</sup>', 'matrix', 'D', 'i:⁻¹', 'na:MATRIX', 'i:D');
+K('inv', 'x<sup>-1</sup>', 'matrix', 'D', 'i:⁻¹', 'MATRIX', 'i:D');
 K('sin', 'sin', 'sin⁻¹', 'E', 'i:sin(', 'i:sin⁻¹(', 'i:E');
 K('cos', 'cos', 'cos⁻¹', 'F', 'i:cos(', 'i:cos⁻¹(', 'i:F');
 K('tan', 'tan', 'tan⁻¹', 'G', 'i:tan(', 'i:tan⁻¹(', 'i:G');
@@ -2541,12 +2916,12 @@ K('log', 'log', '10<sup>x</sup>', 'N', 'i:log(', 'i:10^(', 'i:N');
 K('n7', '7', 'u', 'O', 'i:7', 'na:SEQUENCES', 'i:O', 'num');
 K('n8', '8', 'v', 'P', 'i:8', 'na:SEQUENCES', 'i:P', 'num');
 K('n9', '9', 'w', 'Q', 'i:9', 'na:SEQUENCES', 'i:Q', 'num');
-K('mul', '×', '[', 'R', 'i:×', 'na:MATRIX', 'i:R', 'op');
+K('mul', '×', '[', 'R', 'i:×', 'i:[', 'i:R', 'op');
 K('ln', 'ln', 'e<sup>x</sup>', 'S', 'i:ln(', 'i:e^(', 'i:S');
 K('n4', '4', 'L4', 'T', 'i:4', 'i:L4', 'i:T', 'num');
 K('n5', '5', 'L5', 'U', 'i:5', 'i:L5', 'i:U', 'num');
 K('n6', '6', 'L6', 'V', 'i:6', 'i:L6', 'i:V', 'num');
-K('sub', '−', ']', 'W', 'i:−', 'na:MATRIX', 'i:W', 'op');
+K('sub', '−', ']', 'W', 'i:−', 'i:]', 'i:W', 'op');
 K('sto', 'sto→', 'rcl', 'X', 'i:→', 'na:RCL', 'i:X');
 K('n1', '1', 'L1', 'Y', 'i:1', 'i:L1', 'i:Y', 'num');
 K('n2', '2', 'L2', 'Z', 'i:2', 'i:L2', 'i:Z', 'num');
@@ -2554,7 +2929,7 @@ K('n3', '3', 'L3', 'θ', 'i:3', 'i:L3', 'i:θ', 'num');
 K('add', '+', 'mem', '"', 'i:+', 'MEM', 'i:"', 'op');
 K('on', 'on', 'off', '', 'ON', 'OFF', 'ON');
 K('n0', '0', 'catalog', '␣', 'i:0', 'CATALOG', 'i: ', 'num');
-K('dot', '.', 'i', ':', 'i:.', 'na:COMPLEX NUMBERS', 'i::', 'num');
+K('dot', '.', 'i', ':', 'i:.', 'i:i', 'i::', 'num');
 K('neg', '(−)', 'ans', '?', 'i:⁻', 'i:Ans', 'i:?', 'num');
 K('enter', 'enter', 'entry', 'solve', 'ENTER', 'ENTRY', 'na:SOLVER', 'op enter');
 K('up', '▲', 'bright', '', 'UP', 'BRIGHT+', 'UP');
