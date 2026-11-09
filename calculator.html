@@ -177,7 +177,11 @@ function linearize(toks, a = 0, b = toks.length) {
 const tplEmpty = (toks, i) => { const { end } = tplBoxes(toks, i); return toks.slice(i + 1, end).every(isMarker); };
 class Ed {
   constructor(t = []) { this.t = t; this.c = t.length; this.fresh = false; this.dirty = false; }
-  ins(tok) { if (this.fresh) { this.t.splice(0); this.c = 0; this.fresh = false; } this.t.splice(this.c, 0, tok); this.c++; this.dirty = true; }
+  ins(tok, forceInsert) {
+    if (this.fresh) { this.t.splice(0); this.c = 0; this.fresh = false; }
+    const over = !forceInsert && !S.insMode && !S.mode.mp && this.c < this.t.length && !isMarker(this.t[this.c]);
+    this.t.splice(this.c, over ? 1 : 0, tok); this.c++; this.dirty = true;
+  }
   insTpl(kind) {
     if (this.fresh) { this.t.splice(0); this.c = 0; this.fresh = false; }
     const n = TPL[kind], toks = ['\u0001' + kind];
@@ -204,8 +208,8 @@ class Ed {
     if (this.c > 0 && isMarker(this.t[this.c - 1])) { if (!this.rmMarker(this.c - 1)) this.c--; return; }
     if (this.c > 0) { this.t.splice(this.c - 1, 1); this.c--; this.dirty = true; }
   }
-  left() { this.fresh = false; if (this.c > 0) this.c--; }
-  right() { this.fresh = false; if (this.c < this.t.length) this.c++; }
+  left() { this.fresh = false; S.insMode = false; if (this.c > 0) this.c--; }
+  right() { this.fresh = false; S.insMode = false; if (this.c < this.t.length) this.c++; }
   clear() { this.t.splice(0); this.c = 0; this.fresh = false; this.dirty = true; }
   set(t) { this.t.splice(0, this.t.length, ...t); this.c = this.t.length; this.dirty = true; }
   str() { return linearize(this.t).join(''); }
@@ -248,7 +252,7 @@ function save() {
   try {
     localStorage.setItem('ce-calc-v1', JSON.stringify({
       mode: S.mode, fmt: S.fmt, win: S.win, tbl: S.tbl, vars: Object.fromEntries(Object.entries(S.vars).map(([k, v]) => [k, isC(v) ? { re: v.re, im: v.im } : v])), ans: typeof S.ans === 'number' || Array.isArray(S.ans) ? S.ans : 0,
-      Y: S.Y.map(y => ({ t: y.ed.t, on: y.on })), entries: S.entries.slice(-20),
+      Y: S.Y.map(y => ({ t: y.ed.t, on: y.on, style: y.style })), entries: S.entries.slice(-20),
       lists: S.lists, plots: S.plots, mats: S.mats, strs: S.strs, progs: S.progs,
       P: S.P.map(q => ({ x: q.x.t, y: q.y.t, on: q.on })), R: S.R.map(q => ({ t: q.ed.t, on: q.on })), Q: S.Q.map(q => ({ e: q.e.t, init: q.init.t, on: q.on })),
     }));
@@ -262,7 +266,7 @@ function load() {
     Object.entries(d.vars || {}).forEach(([k, v]) => { S.vars[k] = v && typeof v === 'object' ? new C(+v.re || 0, +v.im || 0) : +v || 0; });
     if (typeof d.ans === 'number' || Array.isArray(d.ans)) S.ans = d.ans;
     if (d.mats && typeof d.mats === 'object') Object.entries(d.mats).forEach(([k, m]) => { if (/^[A-J]$/.test(k) && Array.isArray(m) && m.length && m.every(r => Array.isArray(r) && r.length === m[0].length)) S.mats[k] = m; });
-    if (Array.isArray(d.Y)) d.Y.forEach((y, i) => { if (S.Y[i] && Array.isArray(y.t)) { S.Y[i].ed.set(y.t); S.Y[i].on = !!y.on; } });
+    if (Array.isArray(d.Y)) d.Y.forEach((y, i) => { if (S.Y[i] && Array.isArray(y.t)) { S.Y[i].ed.set(y.t); S.Y[i].on = !!y.on; if (Number.isInteger(y.style)) S.Y[i].style = y.style; } });
     if (Array.isArray(d.entries)) S.entries = d.entries.filter(Array.isArray);
     if (Array.isArray(d.lists)) d.lists.slice(0, 6).forEach((l, i) => { if (Array.isArray(l)) S.lists[i] = l.filter(v => typeof v === 'number' && isFinite(v)).slice(0, 999); });
     const toks = a => Array.isArray(a) ? a.filter(x => typeof x === 'string') : [];
@@ -1701,6 +1705,7 @@ function drawStr(str, r, c, o = {}) { const a = cells(str); for (let i = 0; i < 
 function drawCursor(r, c, under) {
   if (!S.blink) return;
   const ind = S.second ? '↑' : S.alpha ? 'A' : null;
+  if (S.insMode && !ind) { drawCh(under || ' ', r, c); ctx.fillStyle = '#111'; ctx.fillRect(cellX(c) + 1, rowY(r) + LH - 4, CW - 2, 2.5); return; }
   drawCh(ind || under || ' ', r, c, { bg: '#111' });
   if (S.alpha && S.alphaLock) { ctx.fillStyle = '#fff'; ctx.fillRect(cellX(c) + 2, rowY(r) + LH - 4, CW - 4, 1.5); }
 }
@@ -1959,7 +1964,7 @@ function drawYeqMP() {
     const { e, i, b, h } = rows[k];
     const base = y + Math.max(16, b.asc + 3), r = (base - 16 - SB) / LH;
     const pre = cells(e.label).length + 2;
-    if (e.toggle) { ctx.fillStyle = e.owner.color; roundRect(ctx, cellX(0) + 2, base - 13, CW - 4, 13, 2); ctx.fill(); }
+    if (e.toggle) drawStyleIcon(e, cellX(0), base - 6, st.sel === i && st.onStyle);
     ctx.font = FONT; ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     cells(e.label).forEach((ch, j) => ctx.fillText(ch, cellX(1 + j) + CW / 2, base));
     const ex = cellX(pre - 1);
@@ -2020,6 +2025,19 @@ function drawHome() {
   if (cr >= 0 && cr < ROWS) drawCursor(cr, cp % COLS, ch[cp]);
 }
 
+function drawStyleIcon(e, x, cy, cur) {
+  const y = e.owner;
+  if (cur && S.blink) { ctx.fillStyle = '#111'; ctx.fillRect(x, cy - 9, CW, 18); }
+  ctx.fillStyle = ctx.strokeStyle = cur && S.blink ? '#fff' : y.color;
+  const st = e.fn !== undefined ? y.style : undefined;
+  if (st === undefined || st === 0 || st === 5 || st === 1) {
+    if (st === undefined && !cur) { roundRect(ctx, x + 2, cy - 6, CW - 4, 13, 2); ctx.fill(); return; }
+    ctx.lineWidth = st === 1 ? 3 : st === 5 ? 1 : 1.8; ctx.beginPath(); ctx.moveTo(x + 2, cy - 6); ctx.lineTo(x + CW - 2, cy + 6); ctx.stroke(); return;
+  }
+  if (st === 2) { ctx.beginPath(); ctx.moveTo(x + 1, cy - 7); ctx.lineTo(x + CW - 1, cy - 7); ctx.lineTo(x + CW - 1, cy + 6); ctx.closePath(); ctx.fill(); return; }
+  if (st === 3) { ctx.beginPath(); ctx.moveTo(x + 1, cy - 7); ctx.lineTo(x + 1, cy + 6); ctx.lineTo(x + CW - 1, cy + 6); ctx.closePath(); ctx.fill(); return; }
+  for (let k = 0; k < 4; k++) ctx.fillRect(x + 2 + k * 2.4, cy - 6 + k * 3.4, 2, 2);
+}
 function yEntries() {
   const m = GM();
   if (m === 1) return S.P.flatMap((P, i) => [{ label: 'X' + (i + 1) + 'T', ed: P.x, owner: P, toggle: true }, { label: 'Y' + (i + 1) + 'T', ed: P.y, owner: P, toggle: false }]);
@@ -2027,6 +2045,8 @@ function yEntries() {
   if (m === 3) return S.Q.flatMap(Q => [{ label: Q.name + '(n)', ed: Q.e, owner: Q, toggle: true }, { label: Q.name + '(nMin)', ed: Q.init, owner: Q, toggle: false }]);
   return S.Y.map((y, i) => ({ label: 'Y' + YLAB[i], ed: y.ed, owner: y, toggle: true, fn: i }));
 }
+const STYLES = ['\\', '▬', '◥', '◣', '⋱', '╲'];
+const STYLE_NAMES = ['line', 'thick', 'shade above', 'shade below', 'dotted', 'thin'];
 const curEntry = () => { const E = yEntries(); if (S.yeq.sel >= E.length) S.yeq.sel = E.length - 1; return E[S.yeq.sel]; };
 function yeqLayout() {
   const out = [];
@@ -2057,7 +2077,7 @@ function drawYeq() {
     const l = lines[S.yeq.scroll + r]; if (!l) break;
     const row = r + 1, e = l.e, y = e.owner, eq = l.pre - 1;
     if (l.k === 0) {
-      if (e.toggle) { ctx.fillStyle = y.color; roundRect(ctx, cellX(0) + 2, rowY(row) + 5, CW - 4, LH - 9, 2); ctx.fill(); }
+      if (e.toggle) drawStyleIcon(e, cellX(0), rowY(row) + LH / 2, S.yeq.sel === l.i && S.yeq.onStyle);
       drawStr(e.label, row, 1);
       const onEqCur = S.yeq.sel === l.i && S.yeq.onEq;
       if (onEqCur && S.blink) drawCh(S.second ? '↑' : S.alpha ? 'A' : '=', row, eq, { bg: '#111' });
@@ -2231,18 +2251,25 @@ function renderGraphBuffer() {
     }
   }
   for (const i of GM() === 0 ? activeFns() : []) {
-    c.strokeStyle = c.fillStyle = S.Y[i].color; c.lineWidth = lw; c.lineJoin = 'round'; c.lineCap = 'round';
+    const sty = S.Y[i].style;
+    const dots = sty === 4 || (sty === undefined && S.mode.line === 2);
+    c.strokeStyle = c.fillStyle = S.Y[i].color; c.lineWidth = sty === 1 ? 3 : sty === 5 ? 1.1 : sty === 0 ? 2 : lw; c.lineJoin = 'round'; c.lineCap = 'round';
+    if (sty === 2 || sty === 3) {
+      c.save(); c.globalAlpha = 0.22;
+      for (let px = 0; px <= W - 1; px += step) { const y = evalY(i, pxToX(px)); if (!Number.isFinite(y)) continue; const py = Math.max(SB, Math.min(H, yToPy(y))); if (sty === 2) c.fillRect(px, SB, step, py - SB); else c.fillRect(px, py, step, H - py); }
+      c.restore();
+    }
     let prev = null; c.beginPath();
     for (let px = 0; px <= W - 1 + 1e-9; px += step) {
       const y = evalY(i, pxToX(px));
       if (!Number.isFinite(y)) { prev = null; continue; }
       const py = clampPy(yToPy(y));
-      if (S.mode.line === 2) { c.fillRect(px - 1, py - 1, 2, 2); continue; }
+      if (dots) { c.fillRect(px - 1, py - 1, 2, 2); continue; }
       if (prev && Math.abs(py - prev.py) > GH * 1.2 && (prev.py < SB || prev.py > H || py < SB || py > H)) prev = null;
       if (prev) c.lineTo(px, py); else c.moveTo(px, py);
       prev = { px, py };
     }
-    if (S.mode.line !== 2) c.stroke();
+    if (!dots) c.stroke();
   }
   drawPlots(c);
   renderDraws(c);
@@ -3671,7 +3698,7 @@ function insertTok(tok) {
     if (S.g.mode === 'trace' && /^[0-9.⁻π]$|^e$|^Ans$/.test(tok)) openPrompt();
     else { goHome(); }
   }
-  if (S.screen === 'yeq' && S.yeq.onEq) { S.yeq.onEq = false; curEntry().ed.c = 0; }
+  if (S.screen === 'yeq' && (S.yeq.onEq || S.yeq.onStyle)) { S.yeq.onEq = false; S.yeq.onStyle = false; curEntry().ed.c = 0; }
   if (S.screen === 'yeq' && S.yeq.plot != null) return;
   if (S.screen === 'ledit' && !S.ledit.ed) S.ledit.ed = new Ed([]);
   if (S.screen === 'medit' && !S.medit.ed) S.medit.ed = new Ed([]);
@@ -3692,6 +3719,7 @@ function insertTok(tok) {
 
 function homeEnter() {
   const ed = S.homeEd;
+  S.insMode = false;
   let toks = ed.t.slice();
   if (!toks.length) { if (!S.entries.length) return; toks = S.entries[S.entries.length - 1].slice(); }
   else S.entries.push(toks.slice());
@@ -3748,7 +3776,7 @@ const HANDLERS = {
   yeq(a) {
     const st = S.yeq, E = yEntries(), ent = curEntry(), y = ent.owner, ed = ent.ed;
     const touched = () => { y.ast = undefined; S.graphDirty = true; };
-    const go = k => { st.sel = k; st.onEq = false; E[k].ed.c = E[k].ed.t.length; };
+    const go = k => { st.sel = k; st.onEq = false; st.onStyle = false; E[k].ed.c = E[k].ed.t.length; };
     if (st.plot != null) {
       switch (a) {
         case 'LEFT': st.plot = (st.plot + 2) % 3; return true;
@@ -3762,11 +3790,12 @@ const HANDLERS = {
     switch (a) {
       case 'UP': if (S.mode.mp && !st.onEq && tplVertical(ed, -1)) return true; if (st.sel > 0) go(st.sel - 1); else { st.plot = 0; st.onEq = false; } return true;
       case 'DOWN': case 'ENTER':
+        if (a === 'ENTER' && st.onStyle) { y.style = ((y.style ?? (S.mode.line === 1 ? 5 : S.mode.line === 2 ? 4 : 0)) + 1) % STYLES.length; S.graphDirty = true; toast(STYLE_NAMES[y.style], 900); return true; }
         if (a === 'ENTER' && st.onEq) { y.on = !y.on; S.graphDirty = true; return true; }
         if (a === 'DOWN' && S.mode.mp && !st.onEq && tplVertical(ed, 1)) return true;
         if (st.sel < E.length - 1) go(st.sel + 1); return true;
-      case 'LEFT': if (st.onEq) return true; if (ed.c === 0) { if (ent.toggle) st.onEq = true; } else ed.left(); return true;
-      case 'RIGHT': if (st.onEq) { st.onEq = false; ed.c = 0; } else ed.right(); return true;
+      case 'LEFT': if (st.onStyle) return true; if (st.onEq) { if (GM() === 0) { st.onStyle = true; st.onEq = false; } return true; } if (ed.c === 0) { if (ent.toggle) st.onEq = true; } else ed.left(); return true;
+      case 'RIGHT': if (st.onStyle) { st.onStyle = false; st.onEq = true; return true; } if (st.onEq) { st.onEq = false; ed.c = 0; } else ed.right(); return true;
       case 'CLEAR': ed.clear(); st.onEq = false; touched(); return true;
       case 'DEL': if (!st.onEq) { ed.del(); touched(); } return true;
       case 'BS': if (!st.onEq) { ed.bs(); touched(); } return true;
@@ -4020,7 +4049,7 @@ const HANDLERS = {
       case 'DEL': if (!ed.t.length && L.length > 1) { L.splice(P.row, 1); P.row = Math.min(P.row, L.length - 1); L[P.row].c = 0; } else ed.del(); return true;
       case 'BS': if (ed.c === 0 && P.row > 0) { const prev = L[P.row - 1], k = prev.t.length; prev.t.push(...ed.t); L.splice(P.row, 1); P.row--; prev.c = k; } else ed.bs(); return true;
       case 'CLEAR': ed.clear(); return true;
-      case 'INS': return true;
+      case 'INS': S.insMode = true; return true;
     }
     if (!a.startsWith('i:')) savePedit();
     return false;
@@ -4161,7 +4190,7 @@ function doAction(a) {
   S.blink = true;
   if (S.rcl) {
     if (a === 'CLEAR' || a === 'QUIT') { S.rcl = false; return; }
-    if (a.startsWith('i:')) { const tk = rclTokens(a.slice(2)); S.rcl = false; if (tk) { tk.forEach(insertTok); return; } }
+    if (a.startsWith('i:')) { const tk = rclTokens(a.slice(2)); S.rcl = false; if (tk) { const was = S.insMode; S.insMode = true; tk.forEach(insertTok); S.insMode = was; return; } }
     else if (!['MATRIX', 'LIST', 'VARS'].includes(a)) S.rcl = false;
   }
   if (a.startsWith('na:')) { toast(a.slice(3) + ' is not available in this web version'); return; }
@@ -4187,7 +4216,7 @@ function doAction(a) {
     case 'F1': case 'F2': case 'F3': case 'F4': openMenu(MENUS[a]()); return;
     case 'ON': goHome(); return;
     case 'OFF': S.off = true; S.second = S.alpha = S.alphaLock = false; return;
-    case 'INS': toast('Insert mode is always on'); return;
+    case 'INS': if (editorFor(S.screen)) S.insMode = true; return;
     case 'XT': insertTok(PARAM() === 'n' ? 'n' : PARAM()); return;
     case 'BRIGHT+': S.bright = Math.min(1.25, S.bright + 0.08); cv.style.filter = `brightness(${S.bright})`; return;
     case 'BRIGHT-': S.bright = Math.max(0.35, S.bright - 0.08); cv.style.filter = `brightness(${S.bright})`; return;
