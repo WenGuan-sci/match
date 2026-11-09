@@ -2426,11 +2426,14 @@ function drawTable() {
   for (let k = 1; k < NC; k++) { ctx.beginPath(); ctx.moveTo(k * colW + 0.5, SB); ctx.lineTo(k * colW + 0.5, SB + 24 + rowsVis * rh); ctx.stroke(); }
   ctx.beginPath(); ctx.moveTo(0, SB + 24.5); ctx.lineTo(W, SB + 24.5); ctx.stroke();
   let selVal = null, selLab = '';
+  const ask = S.tbl.indAsk && !S._narrow, askX = S.table.askX || (S.table.askX = []), shown = S.table.shown || (S.table.shown = {});
+  if (ask) t.off = Math.max(0, t.off);
   for (let r = 0; r < rowsVis; r++) {
-    const x = S.tbl.start + (t.off + r) * S.tbl.step;
+    const x = ask ? askX[t.off + r] : S.tbl.start + (t.off + r) * S.tbl.step;
     cols.forEach((fi, k) => {
-      const v = fi === -1 ? x : fi.f(x);
-      const s = Number.isFinite(v) ? fitNum(v, colW - 8) : 'ERROR';
+      const hide = x === undefined || (fi !== -1 && S.tbl.depAsk && !shown[(t.off + r) + ':' + k + ':' + x]);
+      const v = hide ? NaN : fi === -1 ? x : fi.f(x);
+      const s = hide ? '' : Number.isFinite(v) ? fitNum(v, colW - 8) : 'ERROR';
       const cy = SB + 24 + r * rh + rh / 2;
       const sel = r === t.row && k === t.col;
       if (sel) { ctx.fillStyle = '#2b6cc4'; ctx.fillRect(k * colW + 1, cy - rh / 2 + 1, colW - 1, rh - 1); selVal = v; selLab = fi === -1 ? PARAM() : fi.label; }
@@ -2440,7 +2443,8 @@ function drawTable() {
   }
   ctx.fillStyle = '#eef1f5'; ctx.fillRect(0, H - 22, W, 22);
   ctx.fillStyle = '#111'; ctx.textAlign = 'left'; ctx.font = SANS;
-  ctx.fillText(selLab + '=' + (Number.isFinite(selVal) ? fmtNum(selVal) : 'ERROR'), 6, H - 10);
+  if (t.ed) { const txt = PARAM() + '=' + t.ed.str(); ctx.fillText(txt, 6, H - 10); if (S.blink) ctx.fillRect(6 + ctx.measureText(PARAM() + '=' + linearize(t.ed.t.slice(0, t.ed.c)).join('')).width, H - 19, 2, 16); }
+  else ctx.fillText(selLab + '=' + (Number.isFinite(selVal) ? fmtNum(selVal) : ''), 6, H - 10);
   if (!fns.length) { ctx.fillStyle = '#6b7380'; ctx.textAlign = 'center'; ctx.fillText('Enter a function in Y= to fill the table', W / 2, SB + 24 + rowsVis * rh / 2 + 20); }
 }
 /* ---- list editor ---- */
@@ -3447,7 +3451,7 @@ function openTrace(x) {
   g.mode = 'trace';
   g.trace = { fi, x: x !== undefined ? x : pxToX(Math.round((GW - 1) / 2)) };
 }
-function openTable() { closeGraphState(); S.screen = 'table'; }
+function openTable() { closeGraphState(); S.table.ed = null; S.screen = 'table'; }
 
 /* ---- zoom ---- */
 function pushWin() { S.prevWin = { ...S.win }; }
@@ -3733,6 +3737,7 @@ function editorFor(screen) {
   if (screen === 'medit') return S.medit.ed;
   if (screen === 'pedit') return S.pedit.lines[S.pedit.row];
   if (screen === 'appform') return S.af.ed;
+  if (screen === 'table') return S.table.ed || null;
   if (screen === 'pnew') return S.pnew.ed;
   if (screen === 'prun') return S.prun.input && S.prun.input.ed;
   if (screen === 'solver') return S.solver.stage === 0 ? S.solver.eq : S.solver.ed;
@@ -3751,6 +3756,7 @@ function insertTok(tok) {
   if (S.screen === 'medit' && !S.medit.ed) S.medit.ed = new Ed([]);
   if (S.screen === 'solver' && S.solver.stage === 1 && !S.solver.ed && solverRows()[S.solver.sel] !== 'bound') S.solver.ed = new Ed([]);
   if (S.screen === 'pnew' && !/^[A-Z0-9θ]$/.test(tok)) return;
+  if (S.screen === 'table') { if (!(S.tbl.indAsk && S.table.col === 0)) return; if (!S.table.ed) S.table.ed = new Ed([]); }
   if (S.screen === 'appform') { const r = afRows()[S.af.sel]; if (!r || r.opts || r.act) return; if (!S.af.ed) S.af.ed = new Ed([]); }
   if (S.screen === 'prun' && !(S.prun.input)) { if (S.run && S.run.active) return; goHome(); }
   const ed = editorFor(S.screen);
@@ -4213,14 +4219,26 @@ const HANDLERS = {
   table(a) {
     const t = S.table, fns = tableCols(), ncols = 1 + Math.min(3, Math.max(0, fns.length - t.fcol));
     switch (a) {
-      case 'UP': if (t.row > 0) t.row--; else t.off--; return true;
-      case 'DOWN': if (t.row < 7) t.row++; else t.off++; return true;
+      case 'UP': if (t.ed) return true; if (t.row > 0) t.row--; else if (!S.tbl.indAsk || t.off > 0) t.off--; return true;
+      case 'DOWN': if (t.ed) return true; if (t.row < 7) t.row++; else t.off++; return true;
       case 'LEFT': if (t.col > 0) t.col--; else if (t.fcol > 0) t.fcol--; return true;
       case 'RIGHT': if (t.col < ncols - 1) t.col++; else if (t.fcol + 3 < fns.length) t.fcol++; return true;
-      case 'CLEAR': case 'BS': goHome(); return true;
-      case 'ENTER': return true;
+      case 'CLEAR': if (t.ed) { t.ed = null; return true; } goHome(); return true;
+      case 'BS': if (t.ed) { t.ed.bs(); return true; } goHome(); return true;
+      case 'ENTER': {
+        const idx = t.off + t.row;
+        if (t.ed) {
+          try { const v = evalTokens(t.ed.t); (S.table.askX || (S.table.askX = []))[idx] = v; t.ed = null; if (t.row < 7) t.row++; else t.off++; }
+          catch (e) { if (!(e instanceof CalcError)) throw e; const keep = t.ed.t.slice(); showError(e.type, () => { S.screen = 'table'; t.ed = new Ed(keep); }); }
+          return true;
+        }
+        if (S.tbl.depAsk && t.col > 0) { const x = S.tbl.indAsk ? (S.table.askX || [])[idx] : S.tbl.start + idx * S.tbl.step; if (x !== undefined) (S.table.shown || (S.table.shown = {}))[idx + ':' + t.col + ':' + x] = 1; }
+        return true;
+      }
+      case 'DEL': if (t.ed) { t.ed.del(); return true; } if (S.tbl.indAsk && t.col === 0 && S.table.askX) S.table.askX.splice(t.off + t.row, 1); return true;
     }
-    return a.startsWith('i:') || a === 'DEL';
+    if (a.startsWith('i:')) return !(S.tbl.indAsk && t.col === 0);
+    return false;
   },
 };
 
@@ -4248,7 +4266,16 @@ function doAction(a) {
     case 'QUIT': if (S.screen === 'form' && !commitField()) return; goHome(); return;
     case 'YEQ': openYeq(); return;
     case 'WINDOW': openForm('window'); return;
-    case 'TBLSET': openForm('tblset'); return;
+    case 'TBLSET': openAppForm({
+      title: 'TABLE SETUP', hint: '',
+      rows: [
+        { label: 'TblStart=', get: () => S.tbl.start, set: v => { S.tbl.start = v; } },
+        { label: 'ΔTbl=', get: () => S.tbl.step, set: v => { if (v === 0) err('DOMAIN'); S.tbl.step = v; } },
+        { label: 'Indpnt:', opts: ['Auto', 'Ask'], get: () => S.tbl.indAsk ? 1 : 0, set: v => { S.tbl.indAsk = v; } },
+        { label: 'Depend:', opts: ['Auto', 'Ask'], get: () => S.tbl.depAsk ? 1 : 0, set: v => { S.tbl.depAsk = v; S.table.shown = {}; } },
+      ],
+      solve() {},
+    }); return;
     case 'ZOOM': openMenu(MENUS.ZOOM()); return;
     case 'FORMAT': openOpts('format'); return;
     case 'TRACE': openTrace(); return;
