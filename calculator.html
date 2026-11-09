@@ -146,7 +146,7 @@ class Ed {
 /* =================================================================
    State
    ================================================================= */
-const DEFAULT_WIN = { xmin: -10, xmax: 10, xscl: 1, ymin: -10, ymax: 10, yscl: 1, xres: 1 };
+const DEFAULT_WIN = { xmin: -10, xmax: 10, xscl: 1, ymin: -10, ymax: 10, yscl: 1, xres: 1, tmin: 0, tmax: 2 * Math.PI, tstep: Math.PI / 24, thmin: 0, thmax: 2 * Math.PI, thstep: Math.PI / 24, nmin: 1, nmax: 10, pstart: 1, pstep: 1 };
 const S = {
   mode: { notation: 0, fix: -1, angle: 0, line: 0, cx: 0, graph: 0 },
   fmt: { coord: 0, grid: 0, axes: 0, label: 0 },
@@ -165,7 +165,10 @@ const S = {
   plots: [0, 1, 2].map(() => ({ on: false, type: 0, x: 0, y: 1, mark: 0 })),
   ledit: { col: 0, fcol: 0, row: 0, off: 0, ed: null },
   stat: null,
-  mats: {}, statVars: {},
+  mats: {}, statVars: {}, seqGen: 0,
+  P: [0, 1, 2, 3, 4, 5].map(i => ({ x: new Ed([]), y: new Ed([]), on: true, color: COLORS[i] })),
+  R: [0, 1, 2, 3, 4, 5].map(i => ({ ed: new Ed([]), on: true, color: COLORS[i] })),
+  Q: ['u', 'v', 'w'].map((name, i) => ({ name, e: new Ed([]), init: new Ed([]), on: true, color: COLORS[i] })),
   medit: { n: 'A', row: -1, col: 0, fcol: 0, off: 0, ed: null },
 };
 const PLOTC = ['#1a5fd8', '#d8232c', '#151515'];
@@ -177,6 +180,7 @@ function save() {
       mode: S.mode, fmt: S.fmt, win: S.win, tbl: S.tbl, vars: Object.fromEntries(Object.entries(S.vars).map(([k, v]) => [k, isC(v) ? { re: v.re, im: v.im } : v])), ans: typeof S.ans === 'number' || Array.isArray(S.ans) ? S.ans : 0,
       Y: S.Y.map(y => ({ t: y.ed.t, on: y.on })), entries: S.entries.slice(-20),
       lists: S.lists, plots: S.plots, mats: S.mats,
+      P: S.P.map(q => ({ x: q.x.t, y: q.y.t, on: q.on })), R: S.R.map(q => ({ t: q.ed.t, on: q.on })), Q: S.Q.map(q => ({ e: q.e.t, init: q.init.t, on: q.on })),
     }));
   } catch (e) { /* storage unavailable */ }
 }
@@ -191,6 +195,10 @@ function load() {
     if (Array.isArray(d.Y)) d.Y.forEach((y, i) => { if (S.Y[i] && Array.isArray(y.t)) { S.Y[i].ed.set(y.t); S.Y[i].on = !!y.on; } });
     if (Array.isArray(d.entries)) S.entries = d.entries.filter(Array.isArray);
     if (Array.isArray(d.lists)) d.lists.slice(0, 6).forEach((l, i) => { if (Array.isArray(l)) S.lists[i] = l.filter(v => typeof v === 'number' && isFinite(v)).slice(0, 999); });
+    const toks = a => Array.isArray(a) ? a.filter(x => typeof x === 'string') : [];
+    if (Array.isArray(d.P)) d.P.slice(0, 6).forEach((q, i) => { S.P[i].x.set(toks(q.x)); S.P[i].y.set(toks(q.y)); S.P[i].on = !!q.on; });
+    if (Array.isArray(d.R)) d.R.slice(0, 6).forEach((q, i) => { S.R[i].ed.set(toks(q.t)); S.R[i].on = !!q.on; });
+    if (Array.isArray(d.Q)) d.Q.slice(0, 3).forEach((q, i) => { S.Q[i].e.set(toks(q.e)); S.Q[i].init.set(toks(q.init)); S.Q[i].on = !!q.on; });
     if (Array.isArray(d.plots)) d.plots.slice(0, 3).forEach((p, i) => { if (p && typeof p === 'object') Object.assign(S.plots[i], p); });
   } catch (e) { /* ignore */ }
 }
@@ -248,11 +256,12 @@ function toFrac(v) {
    Parser  (TI order of operations, implied multiplication)
    ================================================================= */
 const POSTFIX = new Set(['²', '³', '⁻¹', '!', '°', 'ʳ', 'ᵀ']);
-const STATVARS = { 'x̄': 1, 'Σx': 1, 'Σx²': 1, 'Sx': 1, 'σx': 1, 'n': 1, 'minX': 1, 'maxX': 1, 'Q1': 1, 'Med': 1, 'Q3': 1, 'ȳ': 1, 'Σy': 1, 'Σy²': 1, 'Σxy': 1, 'Sy': 1, 'σy': 1, 'minY': 1, 'maxY': 1, 'a': 1, 'b': 1, 'c': 1, 'd': 1, 'e ': 1, 'r': 1, 'r²': 1, 'R²': 1 };
+const STATVARS = { 'x̄': 1, 'Σx': 1, 'Σx²': 1, 'Sx': 1, 'σx': 1, 'n ': 1, 'minX': 1, 'maxX': 1, 'Q1': 1, 'Med': 1, 'Q3': 1, 'ȳ': 1, 'Σy': 1, 'Σy²': 1, 'Σxy': 1, 'Sy': 1, 'σy': 1, 'minY': 1, 'maxY': 1, 'a': 1, 'b': 1, 'c': 1, 'd': 1, 'e ': 1, 'r': 1, 'r²': 1, 'R²': 1 };
 const CONSTS = new Set(['π', 'e', 'rand', 'Ans', 'i', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
 const RELOPS = new Set(['=', '≠', '>', '≥', '<', '≤']);
 const isY = t => /^Y[0-9]$/.test(t);
-const isVar = t => t.length === 1 && LETTERS.includes(t);
+const isVar = t => (t.length === 1 && LETTERS.includes(t)) || t === 'n';
+const SEQN = ['u', 'v', 'w'];
 const isFn = t => t.length > 1 && t.endsWith('(');
 const isL = t => /^L[1-6]$/.test(t);
 
@@ -289,7 +298,7 @@ function parse(toks) {
     if (!l) return false;
     if (l.t === 'num') return true;
     const v = l.v;
-    return v === '(' || v === '{' || v === '[' || isMt(v) || isFn(v) || CONSTS.has(v) || isVar(v) || isY(v) || isL(v) || v === '⁻';
+    return v === '(' || v === '{' || v === '[' || SEQN.includes(v) || isMt(v) || isFn(v) || CONSTS.has(v) || isVar(v) || isY(v) || isL(v) || v === '⁻';
   };
   function pOr() { let a = pAnd(); while (is(' or ') || is(' xor ')) { const op = L[i++].v; a = { k: 'b', op, a, b: pAnd() }; } return a; }
   function pAnd() { let a = pRel(); while (is(' and ')) { i++; a = { k: 'b', op: ' and ', a, b: pRel() }; } return a; }
@@ -341,6 +350,11 @@ function parse(toks) {
       while (is('[')) { i++; const row = [pOr()]; while (is(',')) { i++; row.push(pOr()); } close(); rows.push(row); }
       close(); if (!rows.length) err('SYNTAX');
       return { k: 'mat', rows };
+    }
+    if (SEQN.includes(v)) {
+      i++; if (!is('(')) err('SYNTAX'); i++;
+      const a = pOr(); closeParen();
+      return { k: 'seq', s: SEQN.indexOf(v), a };
     }
     if (isMt(v)) {
       i++;
@@ -952,6 +966,7 @@ function ev(n, env) {
     case 'p': return bcast([ev(n.a, env)], ([a]) => postop(n.op, a));
     case 'f': return chk(callFn(n.name, n.args, env));
     case 'list': return n.items.map(it => numC(ev(it, env)));
+    case 'seq': return bcast([ev(n.a, env)], ([k]) => seqVal(n.s, num(k)));
     case 'mat': {
       const rows = n.rows.map(r => r.map(it => num(ev(it, env))));
       if (rows.some(r => r.length !== rows[0].length)) err('INVALID DIM');
@@ -978,6 +993,46 @@ function ev(n, env) {
   }
   err('SYNTAX');
 }
+/* ---- sequences, parametric and polar helpers ---- */
+const AST_CACHE = new Map();
+function edAst(ed) {
+  const k = ed.t.join('\u0001');
+  let a = AST_CACHE.get(k);
+  if (a === undefined) { try { a = ed.t.length ? parse(ed.t) : null; } catch (e) { a = 'err'; } if (AST_CACHE.size > 400) AST_CACHE.clear(); AST_CACHE.set(k, a); }
+  return a;
+}
+function evalEd(ed, env) { try { const a = edAst(ed); if (!a || a === 'err') return NaN; const v = ev(a, env); return typeof v === 'number' && Number.isFinite(v) ? v : NaN; } catch (e) { return NaN; } }
+let seqDepth = 0;
+function seqVal(i, k) {
+  const Q = S.Q[i], nmin = Math.round(S.win.nmin);
+  if (!isInt(k)) err('DOMAIN'); k = Math.round(k);
+  if (k < nmin) err('INVALID DIM');
+  if (k - nmin > 1e5) err('MEMORY');
+  if (Q.gen !== S.seqGen) { Q.gen = S.seqGen; Q.cache = []; Q.inits = null; }
+  if (!Q.inits) {
+    if (!Q.init.t.length) Q.inits = [];
+    else { const v = ev(parse(Q.init.t), {}); Q.inits = Array.isArray(v) ? v.slice().reverse() : [num(v)]; }
+  }
+  const ast = edAst(Q.e); if (!ast) err('UNDEFINED'); if (ast === 'err') err('SYNTAX');
+  for (let j = Q.cache.length; j <= k - nmin; j++) {
+    if (j < Q.inits.length) { Q.cache[j] = Q.inits[j]; continue; }
+    seqDepth++;
+    try { if (seqDepth > 50) err('MEMORY'); Q.cache[j] = num(ev(ast, { n: nmin + j })); }
+    finally { seqDepth--; }
+  }
+  return Q.cache[k - nmin];
+}
+const GM = () => S.mode.graph || 0;
+const PARAM = () => ['X', 'T', 'θ', 'n'][GM()];
+function curves() {
+  const m = GM(), out = [];
+  if (m === 1) S.P.forEach((P, i) => { if (P.on && P.x.t.length && P.y.t.length) out.push({ i, color: P.color, label: 'X' + (i + 1) + 'T=' + P.x.str() + '  Y' + (i + 1) + 'T=' + P.y.str(), at: t => ({ x: evalEd(P.x, { T: t }), y: evalEd(P.y, { T: t }) }) }); });
+  if (m === 2) S.R.forEach((R, i) => { if (R.on && R.ed.t.length) out.push({ i, color: R.color, label: 'r' + (i + 1) + '=' + R.ed.str(), at: th => { const r = evalEd(R.ed, { θ: th }), a = toR(th); return { x: snap(r * Math.cos(a)), y: snap(r * Math.sin(a)), r }; } }); });
+  if (m === 3) S.Q.forEach((Q, i) => { if (Q.on && Q.e.t.length) out.push({ i, color: Q.color, label: Q.name + '(n)=' + Q.e.str(), at: n => { let y; try { y = seqVal(i, n); } catch (e) { y = NaN; } return { x: n, y }; } }); });
+  return out;
+}
+function paramRange() { const w = S.win, m = GM(); return m === 1 ? [w.tmin, w.tmax, w.tstep] : m === 2 ? [w.thmin, w.thmax, w.thstep] : [w.pstart, w.nmax, w.pstep]; }
+
 function yAst(i) {
   const y = S.Y[i];
   if (y.ast === undefined) { try { y.ast = y.ed.t.length ? parse(y.ed.t) : null; } catch (e) { y.ast = 'err'; } }
@@ -1078,7 +1133,7 @@ function oneVar(l, f) {
   const sx = sumOf(d), sx2 = sumOf(d.map(x => x * x)), m = sx / n;
   const ss = sumOf(d.map(x => (x - m) * (x - m)));
   const [q1, med, q3] = quart(s);
-  Object.assign(S.statVars, { 'x̄': m, 'Σx': sx, 'Σx²': sx2, 'Sx': n > 1 ? Math.sqrt(ss / (n - 1)) : undefined, 'σx': Math.sqrt(ss / n), n, minX: s[0], maxX: s[n - 1], Q1: q1, Med: med, Q3: q3 });
+  Object.assign(S.statVars, { 'x̄': m, 'Σx': sx, 'Σx²': sx2, 'Sx': n > 1 ? Math.sqrt(ss / (n - 1)) : undefined, 'σx': Math.sqrt(ss / n), 'n ': n, minX: s[0], maxX: s[n - 1], Q1: q1, Med: med, Q3: q3 });
   return { title: '1-Var Stats', lines: [
     'x̄=' + SF(m), 'Σx=' + SF(sx), 'Σx²=' + SF(sx2), 'Sx=' + (n > 1 ? SF(Math.sqrt(ss / (n - 1))) : ''), 'σx=' + SF(Math.sqrt(ss / n)),
     'n=' + SF(n), 'minX=' + SF(s[0]), 'Q1=' + SF(q1), 'Med=' + SF(med), 'Q3=' + SF(q3), 'maxX=' + SF(s[n - 1]),
@@ -1098,7 +1153,7 @@ function twoVar(xs, ys, f) {
   const [X, Y] = pairs(xs, ys, f), n = X.length;
   const st = d => { const s = sumOf(d), m = s / n, ss = sumOf(d.map(v => (v - m) * (v - m))); return { s, m, s2: sumOf(d.map(v => v * v)), Sx: n > 1 ? Math.sqrt(ss / (n - 1)) : NaN, sg: Math.sqrt(ss / n), mn: Math.min(...d), mx: Math.max(...d) }; };
   const a = st(X), b = st(Y);
-  Object.assign(S.statVars, { 'x̄': a.m, 'Σx': a.s, 'Σx²': a.s2, 'Sx': a.Sx, 'σx': a.sg, 'ȳ': b.m, 'Σy': b.s, 'Σy²': b.s2, 'Sy': b.Sx, 'σy': b.sg, 'Σxy': sumOf(X.map((x, i) => x * Y[i])), n, minX: a.mn, maxX: a.mx, minY: b.mn, maxY: b.mx });
+  Object.assign(S.statVars, { 'x̄': a.m, 'Σx': a.s, 'Σx²': a.s2, 'Sx': a.Sx, 'σx': a.sg, 'ȳ': b.m, 'Σy': b.s, 'Σy²': b.s2, 'Sy': b.Sx, 'σy': b.sg, 'Σxy': sumOf(X.map((x, i) => x * Y[i])), 'n ': n, minX: a.mn, maxX: a.mx, minY: b.mn, maxY: b.mx });
   return { title: '2-Var Stats', lines: [
     'x̄=' + SF(a.m), 'Σx=' + SF(a.s), 'Σx²=' + SF(a.s2), 'Sx=' + SF(a.Sx), 'σx=' + SF(a.sg),
     'ȳ=' + SF(b.m), 'Σy=' + SF(b.s), 'Σy²=' + SF(b.s2), 'Sy=' + SF(b.Sx), 'σy=' + SF(b.sg),
@@ -1497,13 +1552,22 @@ function drawHome() {
   if (cr >= 0 && cr < ROWS) drawCursor(cr, cp % COLS, ch[cp]);
 }
 
+function yEntries() {
+  const m = GM();
+  if (m === 1) return S.P.flatMap((P, i) => [{ label: 'X' + (i + 1) + 'T', ed: P.x, owner: P, toggle: true }, { label: 'Y' + (i + 1) + 'T', ed: P.y, owner: P, toggle: false }]);
+  if (m === 2) return S.R.map((R, i) => ({ label: 'r' + (i + 1), ed: R.ed, owner: R, toggle: true }));
+  if (m === 3) return S.Q.flatMap(Q => [{ label: Q.name + '(n)', ed: Q.e, owner: Q, toggle: true }, { label: Q.name + '(nMin)', ed: Q.init, owner: Q, toggle: false }]);
+  return S.Y.map((y, i) => ({ label: 'Y' + YLAB[i], ed: y.ed, owner: y, toggle: true, fn: i }));
+}
+const curEntry = () => { const E = yEntries(); if (S.yeq.sel >= E.length) S.yeq.sel = E.length - 1; return E[S.yeq.sel]; };
 function yeqLayout() {
-  const avail = COLS - 4, out = [];
-  S.Y.forEach((y, i) => {
+  const out = [];
+  yEntries().forEach((y, i) => {
+    const pre = cells(y.label).length + 2, avail = COLS - pre;
     const ch = [...y.ed.str()];
     const cp = i === S.yeq.sel && !S.yeq.onEq && S.yeq.plot == null ? y.ed.curChar() : -1;
     const n = Math.max(1, Math.ceil(ch.length / avail), cp >= 0 ? Math.floor(cp / avail) + 1 : 1);
-    for (let k = 0; k < n; k++) out.push({ i, k, ch: ch.slice(k * avail, (k + 1) * avail), cp: cp >= 0 && Math.floor(cp / avail) === k ? cp % avail : -1, under: cp >= 0 ? ch[cp] : null });
+    for (let k = 0; k < n; k++) out.push({ i, k, pre, e: y, ch: ch.slice(k * avail, (k + 1) * avail), cp: cp >= 0 && Math.floor(cp / avail) === k ? cp % avail : -1, under: cp >= 0 ? ch[cp] : null });
   });
   return out;
 }
@@ -1523,17 +1587,16 @@ function drawYeq() {
   if (target >= S.yeq.scroll + vis) S.yeq.scroll = target - vis + 1;
   for (let r = 0; r < vis; r++) {
     const l = lines[S.yeq.scroll + r]; if (!l) break;
-    const row = r + 1, y = S.Y[l.i];
+    const row = r + 1, e = l.e, y = e.owner, eq = l.pre - 1;
     if (l.k === 0) {
-      ctx.fillStyle = y.color; roundRect(ctx, cellX(0) + 2, rowY(row) + 5, CW - 4, LH - 9, 2); ctx.fill();
-      drawCh('Y', row, 1);
-      drawCh(YLAB[l.i], row, 2, { font: '12px "DejaVu Sans Mono", Menlo, monospace' });
+      if (e.toggle) { ctx.fillStyle = y.color; roundRect(ctx, cellX(0) + 2, rowY(row) + 5, CW - 4, LH - 9, 2); ctx.fill(); }
+      drawStr(e.label, row, 1);
       const onEqCur = S.yeq.sel === l.i && S.yeq.onEq;
-      if (onEqCur && S.blink) drawCh(S.second ? '↑' : S.alpha ? 'A' : '=', row, 3, { bg: '#111' });
-      else drawCh('=', row, 3, y.on ? { bg: '#3d4350' } : {});
+      if (onEqCur && S.blink) drawCh(S.second ? '↑' : S.alpha ? 'A' : '=', row, eq, { bg: '#111' });
+      else drawCh('=', row, eq, e.toggle && y.on ? { bg: '#3d4350' } : {});
     }
-    drawStr(l.ch.join(''), row, 4);
-    if (l.cp >= 0) drawCursor(row, 4 + l.cp, l.under);
+    drawStr(l.ch.join(''), row, l.pre);
+    if (l.cp >= 0) drawCursor(row, l.pre + l.cp, l.under);
   }
 }
 
@@ -1680,7 +1743,23 @@ function renderGraphBuffer() {
   // functions
   const step = Math.max(1, Math.min(8, Math.round(w.xres || 1)));
   const lw = S.mode.line === 0 ? 2 : 1.1;
-  for (const i of activeFns()) {
+  if (GM() !== 0) {
+    const [a, b, st] = paramRange();
+    if (st > 0 && (b - a) / st <= 20000) for (const cv of curves()) {
+      c.strokeStyle = c.fillStyle = cv.color; c.lineWidth = lw; c.lineJoin = 'round'; c.lineCap = 'round';
+      let prev = false; c.beginPath();
+      for (let k = 0; ; k++) {
+        const p = a + k * st; if (p > b + Math.abs(st) * 1e-9) break;
+        const pt = cv.at(p);
+        if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) { prev = false; continue; }
+        const px = xToPx(pt.x), py = clampPy(yToPy(pt.y));
+        if (GM() === 3 || S.mode.line === 2) { c.fillRect(px - 1.5, py - 1.5, 3, 3); continue; }
+        if (prev) c.lineTo(px, py); else c.moveTo(px, py); prev = true;
+      }
+      if (GM() !== 3 && S.mode.line !== 2) c.stroke();
+    }
+  }
+  for (const i of GM() === 0 ? activeFns() : []) {
     c.strokeStyle = c.fillStyle = S.Y[i].color; c.lineWidth = lw; c.lineJoin = 'round'; c.lineCap = 'round';
     let prev = null; c.beginPath();
     for (let px = 0; px <= W - 1 + 1e-9; px += step) {
@@ -1755,6 +1834,30 @@ function drawGraph() {
       ctx.beginPath(); ctx.moveTo(x - 5, y + 0.5); ctx.lineTo(x + 6, y + 0.5); ctx.moveTo(x + 0.5, y - 5); ctx.lineTo(x + 0.5, y + 6); ctx.stroke();
     }
     if (S.fmt.coord === 0) lines.push([{ t: 'X=' + fmtNum(pxToX(x), 7) }, { t: 'Y=' + fmtNum(pyToY(y), 7), at: 160 }]);
+  } else if (g.mode === 'trace' && g.trace && g.trace.p !== undefined) {
+    const cv = curves().find(q => q.i === g.trace.fi);
+    if (cv) {
+      const p = g.trace.p, pt = cv.at(p), px = xToPx(pt.x), py = yToPy(pt.y);
+      if (Number.isFinite(pt.y) && Number.isFinite(pt.x) && py >= SB && py <= H) {
+        ctx.save(); ctx.translate(Math.round(px) + 0.5, Math.round(py) + 0.5);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeRect(-4, -4, 8, 8);
+        ctx.strokeStyle = S.blink ? cv.color : '#111'; ctx.lineWidth = 2; ctx.strokeRect(-4, -4, 8, 8);
+        ctx.restore();
+      }
+      ctx.font = SANS; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      const tw = Math.min(W - 8, ctx.measureText(cv.label).width);
+      ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(2, SB + 2, tw + 6, 18);
+      ctx.fillStyle = cv.color; ctx.fillText(cv.label, 5, SB + 4, W - 10);
+      const F = v => Number.isFinite(v) ? fmtNum(v, 7) : '';
+      if (g.result) lines.push([{ t: g.result }]);
+      else if (g.calc) lines.push([{ t: g.calc.prompt(), color: '#2b4f8a' }]);
+      if (g.prompt) lines.push([{ t: g.prompt.label + g.prompt.ed.str() + (S.blink ? '▮' : ' ') }]);
+      else {
+        const head = GM() === 1 ? [{ t: 'T=' + F(p) }] : GM() === 2 ? [{ t: 'θ=' + F(p) }, { t: 'R=' + F(pt.r), at: 160 }] : [{ t: 'n=' + F(p) }];
+        lines.push(head);
+        lines.push([{ t: 'X=' + F(pt.x) }, { t: 'Y=' + F(pt.y), at: 160 }]);
+      }
+    }
   } else if (g.mode === 'trace' && g.trace) {
     const { fi, x } = g.trace;
     const y = evalY(fi, x);
@@ -1781,16 +1884,23 @@ function drawGraph() {
 }
 
 /* ---- table ---- */
+function tableCols() {
+  const m = GM();
+  if (m === 0) return activeFns().map(fi => ({ label: 'Y' + YLAB[fi], color: S.Y[fi].color, f: x => evalY(fi, x) }));
+  if (m === 1) return curves().flatMap(cv => [{ label: 'X' + (cv.i + 1) + 'T', color: cv.color, f: t => cv.at(t).x }, { label: 'Y' + (cv.i + 1) + 'T', color: cv.color, f: t => cv.at(t).y }]);
+  if (m === 2) return curves().map(cv => ({ label: 'r' + (cv.i + 1), color: cv.color, f: th => cv.at(th).r }));
+  return curves().map(cv => ({ label: S.Q[cv.i].name, color: cv.color, f: n => cv.at(n).y }));
+}
 function drawTable() {
-  const fns = activeFns();
+  const fns = tableCols();
   const t = S.table, colW = 80, rowsVis = 8;
   const cols = [-1, ...fns.slice(t.fcol, t.fcol + 3)];
   ctx.font = SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const headY = SB + 12, rh = 22;
   ctx.fillStyle = '#eef1f5'; ctx.fillRect(0, SB, W, 24);
   cols.forEach((fi, k) => {
-    ctx.fillStyle = fi < 0 ? '#111' : S.Y[fi].color;
-    ctx.fillText(fi < 0 ? 'X' : 'Y' + YLAB[fi], k * colW + colW / 2, headY);
+    ctx.fillStyle = fi === -1 ? '#111' : fi.color;
+    ctx.fillText(fi === -1 ? PARAM() : fi.label, k * colW + colW / 2, headY);
   });
   ctx.strokeStyle = '#c3c8d0'; ctx.lineWidth = 1;
   for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(k * colW + 0.5, SB); ctx.lineTo(k * colW + 0.5, SB + 24 + rowsVis * rh); ctx.stroke(); }
@@ -1799,11 +1909,11 @@ function drawTable() {
   for (let r = 0; r < rowsVis; r++) {
     const x = S.tbl.start + (t.off + r) * S.tbl.step;
     cols.forEach((fi, k) => {
-      const v = fi < 0 ? x : evalY(fi, x);
+      const v = fi === -1 ? x : fi.f(x);
       const s = Number.isFinite(v) ? fitNum(v, colW - 8) : 'ERROR';
       const cy = SB + 24 + r * rh + rh / 2;
       const sel = r === t.row && k === t.col;
-      if (sel) { ctx.fillStyle = '#2b6cc4'; ctx.fillRect(k * colW + 1, cy - rh / 2 + 1, colW - 1, rh - 1); selVal = v; selLab = fi < 0 ? 'X' : 'Y' + YLAB[fi]; }
+      if (sel) { ctx.fillStyle = '#2b6cc4'; ctx.fillRect(k * colW + 1, cy - rh / 2 + 1, colW - 1, rh - 1); selVal = v; selLab = fi === -1 ? PARAM() : fi.label; }
       ctx.font = SANS; ctx.fillStyle = sel ? '#fff' : '#111'; ctx.textAlign = 'center';
       ctx.fillText(s, k * colW + colW / 2, cy + 1);
     });
@@ -2184,7 +2294,7 @@ function goHome() { closeGraphState(); S.screen = 'home'; }
 function closeGraphState() { const g = S.g; g.mode = 'none'; g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; }
 function showError(type, gotoFn) { S.err = { type, sel: 0, gotoFn, canGoto: !!gotoFn }; S.screen = 'error'; }
 
-function openYeq() { closeGraphState(); S.screen = 'yeq'; S.yeq.onEq = false; S.yeq.plot = null; const y = S.Y[S.yeq.sel]; y.ed.c = y.ed.t.length; }
+function openYeq() { closeGraphState(); S.screen = 'yeq'; S.yeq.onEq = false; S.yeq.plot = null; const y = curEntry(); y.ed.c = y.ed.t.length; }
 function openLedit() { closeGraphState(); S.ledit.ed = null; S.screen = 'ledit'; }
 function openPlotSetup(j) {
   closeGraphState();
@@ -2209,8 +2319,10 @@ function openForm(kind) {
   if (kind === 'window') {
     S.form = {
       title: 'WINDOW', obj: S.win, kind,
-      fields: [['Xmin', 'xmin'], ['Xmax', 'xmax'], ['Xscl', 'xscl'], ['Ymin', 'ymin'], ['Ymax', 'ymax'], ['Yscl', 'yscl'], ['Xres', 'xres']],
-      extra: () => ['ΔX=' + fmtNum(dX()), 'TraceStep=' + fmtNum(dX() * 2)], sel: 0,
+      fields: [
+        ...[[], [['Tmin', 'tmin'], ['Tmax', 'tmax'], ['Tstep', 'tstep']], [['θmin', 'thmin'], ['θmax', 'thmax'], ['θstep', 'thstep']], [['nMin', 'nmin'], ['nMax', 'nmax'], ['PlotStart', 'pstart'], ['PlotStep', 'pstep']]][GM()],
+        ['Xmin', 'xmin'], ['Xmax', 'xmax'], ['Xscl', 'xscl'], ['Ymin', 'ymin'], ['Ymax', 'ymax'], ['Yscl', 'yscl'], ...(GM() === 0 ? [['Xres', 'xres']] : [])],
+      extra: () => GM() === 0 ? ['ΔX=' + fmtNum(dX()), 'TraceStep=' + fmtNum(dX() * 2)] : [], sel: 0,
     };
   } else {
     S.form = { title: 'TABLE SETUP', obj: S.tbl, kind, fields: [['TblStart', 'start'], ['ΔTbl', 'step']], extra: () => ['Indpnt: Auto', 'Depend: Auto'], sel: 0 };
@@ -2226,6 +2338,8 @@ function commitField() {
     const v = evalTokens(f.ed.t);
     if (fd[1] === 'xres' && (!isInt(v) || v < 1 || v > 8)) err('DOMAIN');
     if (fd[1] === 'step' && v === 0) err('DOMAIN');
+    if (['tstep', 'thstep', 'pstep'].includes(fd[1]) && !(v > 0)) err('DOMAIN');
+    if (['nmin', 'nmax', 'pstart'].includes(fd[1]) && (!isInt(v) || v < 0)) err('DOMAIN');
     f.obj[fd[1]] = v; S.graphDirty = true; f.ed.dirty = false;
     return true;
   } catch (e) {
@@ -2245,7 +2359,7 @@ function openOpts(kind) {
         { opts: ['NORMAL', 'SCI', 'ENG'], get: () => S.mode.notation, set: i => S.mode.notation = i },
         { opts: ['FLOAT', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], get: () => S.mode.fix + 1, set: i => S.mode.fix = i - 1 },
         { opts: ['RADIAN', 'DEGREE'], get: () => S.mode.angle, set: i => { S.mode.angle = i; S.graphDirty = true; } },
-        { opts: ['FUNCTION'], get: () => 0, set: () => {} },
+        { opts: ['FUNC', 'PAR', 'POL', 'SEQ'], get: () => GM(), set: i => { if (S.mode.graph !== i) { S.mode.graph = i; S.yeq.sel = 0; S.g.trace = null; S.table.fcol = 0; S.table.col = 0; } S.graphDirty = true; } },
         { opts: ['THICK', 'THIN', 'DOT'], get: () => S.mode.line, set: i => { S.mode.line = i; S.graphDirty = true; } },
         { opts: ['REAL', 'a+bi', 're^θi'], get: () => S.mode.cx, set: i => S.mode.cx = i },
         { opts: ['CLASSIC'], get: () => 0, set: () => {} },
@@ -2285,6 +2399,14 @@ function openTrace(x) {
   if (!checkWindow() || !checkPlots()) return;
   const fns = activeFns(); S.screen = 'graph'; const g = S.g;
   g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; g.shade = null;
+  if (GM() !== 0) {
+    const cvs = curves();
+    if (!cvs.length) { g.mode = 'free'; g.cx = 160; g.cy = Math.round(SB + GH / 2); return; }
+    const keep = g.trace && g.trace.p !== undefined && cvs.some(q => q.i === g.trace.fi);
+    g.mode = 'trace'; g.trace = { fi: keep ? g.trace.fi : cvs[0].i, p: paramRange()[0] };
+    return;
+  }
+  if (g.trace && g.trace.p !== undefined) g.trace = null;
   if (!fns.length) { g.mode = 'free'; g.cx = 160; g.cy = Math.round(SB + GH / 2); return; }
   const fi = g.trace && fns.includes(g.trace.fi) ? g.trace.fi : fns[0];
   g.mode = 'trace';
@@ -2298,7 +2420,7 @@ function setWin(o) { pushWin(); Object.assign(S.win, o); S.graphDirty = true; }
 function zoom(type) {
   const w = S.win;
   switch (type) {
-    case 'std': setWin({ xmin: -10, xmax: 10, xscl: 1, ymin: -10, ymax: 10, yscl: 1 }); break;
+    case 'std': { const d = S.mode.angle === 1; setWin({ xmin: -10, xmax: 10, xscl: 1, ymin: -10, ymax: 10, yscl: 1, tmin: 0, tmax: d ? 360 : 2 * Math.PI, tstep: d ? 7.5 : Math.PI / 24, thmin: 0, thmax: d ? 360 : 2 * Math.PI, thstep: d ? 7.5 : Math.PI / 24 }); break; }
     case 'dec': setWin({ xmin: -6.6, xmax: 6.6, xscl: 1, ymin: -4.1, ymax: 4.1, yscl: 1 }); break;
     case 'int': setWin({ xmin: -132, xmax: 132, xscl: 10, ymin: -82, ymax: 82, yscl: 10 }); break;
     case 'trig': { const d = S.mode.angle === 1; setWin({ xmin: d ? -352.5 : -352.5 * Math.PI / 180, xmax: d ? 352.5 : 352.5 * Math.PI / 180, xscl: d ? 90 : Math.PI / 2, ymin: -4, ymax: 4, yscl: 1 }); break; }
@@ -2348,7 +2470,24 @@ const CALC = {
   dydx: { steps: ['dy/dx: ENTER at a point'] },
   integral: { steps: ['Lower Limit?', 'Upper Limit?'] },
 };
+function paramCalc(type, cv, p) {
+  const g = S.g, h = 1e-4 * Math.max(1, Math.abs(paramRange()[2]));
+  const P = q => cv.at(q), a = P(p - h), b = P(p + h);
+  const dx = (b.x - a.x) / (2 * h), dy = (b.y - a.y) / (2 * h);
+  const F = v => Number.isFinite(v) ? fmtNum(v, 7) : 'undefined';
+  if (type === 'dydx') g.result = 'dy/dx=' + F(dy / dx);
+  else if (type === 'dydt') g.result = 'dy/dt=' + F(dy);
+  else if (type === 'dxdt') g.result = 'dx/dt=' + F(dx);
+  else if (type === 'drdθ') g.result = 'dr/dθ=' + F((b.r - a.r) / (2 * h));
+}
 function startCalc(type) {
+  if (GM() !== 0) {
+    openTrace(); if (S.screen !== 'graph' || S.g.mode !== 'trace') { toast('Enter a function in Y= first'); return; }
+    const g = S.g;
+    if (type === 'value') { openPrompt(); g.prompt.label = PARAM() + '='; return; }
+    g.calc = { type, step: 0, vals: [], prompt() { return 'Move, then ENTER'; } };
+    return;
+  }
   openTrace(); if (S.screen !== 'graph') return;
   const g = S.g;
   if (g.mode !== 'trace') { S.screen = 'graph'; toast('Enter a function in Y= first'); return; }
@@ -2451,7 +2590,10 @@ const MENUS = {
     ] },
     { title: 'MEMORY', items: [{ label: 'ZPrevious', act: () => zoom('prev') }] },
   ]) }),
-  CALC: () => ({ keepScreen: true, tabs: mkTabs([{ title: 'CALCULATE', items: [
+  CALC: () => GM() === 1 ? { keepScreen: true, tabs: mkTabs([{ title: 'CALCULATE', items: ['value', 'dy/dx', 'dy/dt', 'dx/dt'].map(l => ({ label: l, act: () => startCalc(l.replace(/\//g, '')) })) }]) }
+    : GM() === 2 ? { keepScreen: true, tabs: mkTabs([{ title: 'CALCULATE', items: ['value', 'dy/dx', 'dr/dθ'].map(l => ({ label: l, act: () => startCalc(l.replace(/\//g, '')) })) }]) }
+    : GM() === 3 ? { keepScreen: true, tabs: mkTabs([{ title: 'CALCULATE', items: [{ label: 'value', act: () => startCalc('value') }] }]) }
+    : ({ keepScreen: true, tabs: mkTabs([{ title: 'CALCULATE', items: [
     { label: 'value', act: () => startCalc('value') }, { label: 'zero', act: () => startCalc('zero') },
     { label: 'minimum', act: () => startCalc('minimum') }, { label: 'maximum', act: () => startCalc('maximum') },
     { label: 'intersect', act: () => startCalc('intersect') }, { label: 'dy/dx', act: () => startCalc('dydx') },
@@ -2504,6 +2646,7 @@ function resetAll() {
   S.Y.forEach(y => { y.ed.clear(); y.on = true; y.ast = undefined; });
   S.hist = []; S.entries = []; S.homeEd.clear(); S.graphDirty = true;
   S.lists = [[], [], [], [], [], []]; S.mats = {}; S.statVars = {};
+  S.P.forEach(q => { q.x.clear(); q.y.clear(); q.on = true; }); S.R.forEach(q => { q.ed.clear(); q.on = true; }); S.Q.forEach(q => { q.e.clear(); q.init.clear(); q.on = true; });
   S.plots.forEach(p => Object.assign(p, { on: false, type: 0, x: 0, y: 1, mark: 0 }));
 }
 
@@ -2513,7 +2656,7 @@ function resetAll() {
 const ANS_OPS = new Set(['+', '−', '×', '÷', '^', '²', '³', '⁻¹', '→', '!', '►Frac', '►Dec', ' nPr ', ' nCr ', 'ˣ√', '=', '≠', '>', '≥', '<', '≤']);
 function editorFor(screen) {
   if (screen === 'home') return S.homeEd;
-  if (screen === 'yeq') return S.Y[S.yeq.sel].ed;
+  if (screen === 'yeq') return curEntry().ed;
   if (screen === 'form') return S.form && S.form.ed;
   if (screen === 'graph' && S.g.prompt) return S.g.prompt.ed;
   if (screen === 'ledit') return S.ledit.ed;
@@ -2526,7 +2669,7 @@ function insertTok(tok) {
     if (S.g.mode === 'trace' && /^[0-9.⁻π]$|^e$|^Ans$/.test(tok)) openPrompt();
     else { goHome(); }
   }
-  if (S.screen === 'yeq' && S.yeq.onEq) { S.yeq.onEq = false; S.Y[S.yeq.sel].ed.c = 0; }
+  if (S.screen === 'yeq' && S.yeq.onEq) { S.yeq.onEq = false; curEntry().ed.c = 0; }
   if (S.screen === 'yeq' && S.yeq.plot != null) return;
   if (S.screen === 'ledit' && !S.ledit.ed) S.ledit.ed = new Ed([]);
   if (S.screen === 'medit' && !S.medit.ed) S.medit.ed = new Ed([]);
@@ -2534,7 +2677,7 @@ function insertTok(tok) {
   if (!ed) return;
   if (S.screen === 'home' && ed.t.length === 0 && ANS_OPS.has(tok)) ed.ins('Ans');
   ed.ins(tok);
-  if (S.screen === 'yeq') { S.Y[S.yeq.sel].ast = undefined; S.graphDirty = true; }
+  if (S.screen === 'yeq') { curEntry().owner.ast = undefined; S.graphDirty = true; }
 }
 
 function homeEnter() {
@@ -2586,8 +2729,9 @@ const HANDLERS = {
     return false;
   },
   yeq(a) {
-    const st = S.yeq, y = S.Y[st.sel], ed = y.ed;
+    const st = S.yeq, E = yEntries(), ent = curEntry(), y = ent.owner, ed = ent.ed;
     const touched = () => { y.ast = undefined; S.graphDirty = true; };
+    const go = k => { st.sel = k; st.onEq = false; E[k].ed.c = E[k].ed.t.length; };
     if (st.plot != null) {
       switch (a) {
         case 'LEFT': st.plot = (st.plot + 2) % 3; return true;
@@ -2599,11 +2743,11 @@ const HANDLERS = {
       return a.startsWith('i:');
     }
     switch (a) {
-      case 'UP': if (st.sel > 0) { st.sel--; st.onEq = false; S.Y[st.sel].ed.c = S.Y[st.sel].ed.t.length; } else { st.plot = 0; st.onEq = false; } return true;
+      case 'UP': if (st.sel > 0) go(st.sel - 1); else { st.plot = 0; st.onEq = false; } return true;
       case 'DOWN': case 'ENTER':
         if (a === 'ENTER' && st.onEq) { y.on = !y.on; S.graphDirty = true; return true; }
-        if (st.sel < 9) { st.sel++; st.onEq = false; S.Y[st.sel].ed.c = S.Y[st.sel].ed.t.length; } return true;
-      case 'LEFT': if (st.onEq) return true; if (ed.c === 0) st.onEq = true; else ed.left(); return true;
+        if (st.sel < E.length - 1) go(st.sel + 1); return true;
+      case 'LEFT': if (st.onEq) return true; if (ed.c === 0) { if (ent.toggle) st.onEq = true; } else ed.left(); return true;
       case 'RIGHT': if (st.onEq) { st.onEq = false; ed.c = 0; } else ed.right(); return true;
       case 'CLEAR': ed.clear(); st.onEq = false; touched(); return true;
       case 'DEL': if (!st.onEq) { ed.del(); touched(); } return true;
@@ -2684,6 +2828,7 @@ const HANDLERS = {
           try { v = evalTokens(ed.t); }
           catch (e) { if (!(e instanceof CalcError)) throw e; g.prompt = null; showError(e.type, null); return true; }
           g.prompt = null;
+          if (g.trace && g.trace.p !== undefined) { g.trace.p = v; g.result = null; g.calc = null; return true; }
           if (v < S.win.xmin || v > S.win.xmax) { if (g.calc && g.calc.type === 'value') g.calc = null; toast('X must be between Xmin and Xmax'); return true; }
           g.trace.x = v; g.result = null; g.info = null;
           if (g.calc) calcConfirm();
@@ -2708,6 +2853,21 @@ const HANDLERS = {
         case 'RIGHT': g.cx = Math.min(W - 1, g.cx + 1); return true;
         case 'ENTER': if (g.zoom) zoomEnter(); return true;
         case 'CLEAR': case 'BS': if (g.zoom) { g.zoom = null; } g.mode = 'none'; return true;
+      }
+    }
+    if (g.mode === 'trace' && g.trace && g.trace.p !== undefined) {
+      const t = g.trace, cvs = curves(), [lo, hi, st] = paramRange();
+      switch (a) {
+        case 'LEFT': case 'RIGHT': g.result = null; t.p = Math.max(lo, Math.min(hi, t.p + (a === 'LEFT' ? -st : st))); return true;
+        case 'UP': case 'DOWN': { g.result = null; const k = cvs.findIndex(q => q.i === t.fi); if (cvs.length) t.fi = cvs[(k + (a === 'UP' ? -1 : 1) + cvs.length) % cvs.length].i; return true; }
+        case 'ENTER': {
+          const cv = cvs.find(q => q.i === t.fi); if (!cv) return true;
+          if (g.calc) { paramCalc(g.calc.type, cv, t.p); g.calc = null; return true; }
+          const pt = cv.at(t.p);
+          if (Number.isFinite(pt.x) && Number.isFinite(pt.y)) { const hw = (S.win.xmax - S.win.xmin) / 2, hh = (S.win.ymax - S.win.ymin) / 2; Object.assign(S.win, { xmin: pt.x - hw, xmax: pt.x + hw, ymin: pt.y - hh, ymax: pt.y + hh }); S.graphDirty = true; }
+          return true;
+        }
+        case 'CLEAR': case 'BS': g.mode = 'none'; g.result = null; g.calc = null; return true;
       }
     }
     if (g.mode === 'trace') {
@@ -2840,7 +3000,7 @@ const HANDLERS = {
     commitTestRow(); return false;
   },
   table(a) {
-    const t = S.table, fns = activeFns(), ncols = 1 + Math.min(3, Math.max(0, fns.length - t.fcol));
+    const t = S.table, fns = tableCols(), ncols = 1 + Math.min(3, Math.max(0, fns.length - t.fcol));
     switch (a) {
       case 'UP': if (t.row > 0) t.row--; else t.off--; return true;
       case 'DOWN': if (t.row < 7) t.row++; else t.off++; return true;
@@ -2877,6 +3037,7 @@ function doAction(a) {
     case 'ON': goHome(); return;
     case 'OFF': S.off = true; S.second = S.alpha = S.alphaLock = false; return;
     case 'INS': toast('Insert mode is always on'); return;
+    case 'XT': insertTok(PARAM() === 'n' ? 'n' : PARAM()); return;
     case 'BRIGHT+': S.bright = Math.min(1.25, S.bright + 0.08); cv.style.filter = `brightness(${S.bright})`; return;
     case 'BRIGHT-': S.bright = Math.max(0.35, S.bright - 0.08); cv.style.filter = `brightness(${S.bright})`; return;
     case 'BS': doAction('CLEAR'); return;
@@ -2895,7 +3056,7 @@ K('second', '2nd', '', '', null, null, null, 'second');
 K('mode', 'mode', 'quit', '', 'MODE', 'QUIT', 'MODE', 'sm');
 K('del', 'del', 'ins', '', 'DEL', 'INS', 'DEL', 'sm');
 K('alpha', 'alpha', 'A-lock', '', null, null, null, 'alpha');
-K('xt', 'X,T,θ,<i>n</i>', 'link', '', 'i:X', 'na:LINK', 'i:X', 'sm');
+K('xt', 'X,T,θ,<i>n</i>', 'link', '', 'XT', 'na:LINK', 'XT', 'sm');
 K('stat', 'stat', 'list', '', 'STAT', 'LIST', 'STAT', 'sm');
 K('math', 'math', 'test', 'A', 'MATH', 'TEST', 'i:A', 'sm');
 K('apps', 'apps', 'angle', 'B', 'na:APPS', 'ANGLE', 'i:B', 'sm');
@@ -2913,9 +3074,9 @@ K('lp', '(', '{', 'K', 'i:(', 'i:{', 'i:K');
 K('rp', ')', '}', 'L', 'i:)', 'i:}', 'i:L');
 K('div', '÷', 'e', 'M', 'i:÷', 'i:e', 'i:M', 'op');
 K('log', 'log', '10<sup>x</sup>', 'N', 'i:log(', 'i:10^(', 'i:N');
-K('n7', '7', 'u', 'O', 'i:7', 'na:SEQUENCES', 'i:O', 'num');
-K('n8', '8', 'v', 'P', 'i:8', 'na:SEQUENCES', 'i:P', 'num');
-K('n9', '9', 'w', 'Q', 'i:9', 'na:SEQUENCES', 'i:Q', 'num');
+K('n7', '7', 'u', 'O', 'i:7', 'i:u', 'i:O', 'num');
+K('n8', '8', 'v', 'P', 'i:8', 'i:v', 'i:P', 'num');
+K('n9', '9', 'w', 'Q', 'i:9', 'i:w', 'i:Q', 'num');
 K('mul', '×', '[', 'R', 'i:×', 'i:[', 'i:R', 'op');
 K('ln', 'ln', 'e<sup>x</sup>', 'S', 'i:ln(', 'i:e^(', 'i:S');
 K('n4', '4', 'L4', 'T', 'i:4', 'i:L4', 'i:T', 'num');
@@ -2939,6 +3100,7 @@ K('right', '▶', '', '', 'RIGHT', 'RIGHT', 'RIGHT');
 
 function press(id) {
   const k = KEYS[id]; if (!k) return;
+  S.seqGen++;
   if (S.off) { if (id === 'on') { S.off = false; redraw(); } return; }
   if (id === 'second') { S.second = !S.second; S.blink = true; redraw(); return; }
   if (id === 'alpha') {
@@ -3002,6 +3164,7 @@ const KB = { '0': 'n0', '1': 'n1', '2': 'n2', '3': 'n3', '4': 'n4', '5': 'n5', '
 function flash(id) { const el = document.querySelector(`[data-id="${id}"]`); if (!el) return; el.classList.add('pressed'); setTimeout(() => el.classList.remove('pressed'), 110); }
 window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  S.seqGen++;
   let id = KB[e.key];
   if (e.key === 'Backspace') { e.preventDefault(); S.second = false; doAction('BS'); save(); redraw(); return; }
   if (e.key === '{' || e.key === '}') { e.preventDefault(); doAction('i:' + e.key); save(); redraw(); return; }
