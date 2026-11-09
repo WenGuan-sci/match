@@ -106,7 +106,8 @@ body{
    Constants & canvas
    ================================================================= */
 const SCALE = 3, W = 320, H = 240, SB = 20, CW = 12.25, LH = 22, COLS = 26, ROWS = 10;
-const GH = H - SB;
+let GH = H - SB, GW = W, GB = H;
+function setArea() { const sp = S.mode.split || 0; GW = sp === 2 ? W / 2 : W; GB = sp === 1 ? SB + 110 : H; GH = GB - SB; }
 const FONT = '16px "DejaVu Sans Mono", Menlo, Consolas, "Liberation Mono", "Courier New", monospace';
 const SMALL = '600 9.5px system-ui, -apple-system, "Segoe UI", sans-serif';
 const SANS = '14px system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -1602,29 +1603,29 @@ function renderDraws(c) {
     const fx = (toks, x) => { try { return num(ev(edAst({ t: toks }), { X: x })); } catch (e) { return NaN; } };
     switch (d.k) {
       case 'line': c.beginPath(); c.moveTo(xToPx(d.a[0]), clampPy(yToPy(d.a[1]))); c.lineTo(xToPx(d.a[2]), clampPy(yToPy(d.a[3]))); c.stroke(); break;
-      case 'h': c.beginPath(); c.moveTo(0, yToPy(d.y)); c.lineTo(W, yToPy(d.y)); c.stroke(); break;
-      case 'v': c.beginPath(); c.moveTo(xToPx(d.x), SB); c.lineTo(xToPx(d.x), H); c.stroke(); break;
+      case 'h': c.beginPath(); c.moveTo(0, yToPy(d.y)); c.lineTo(GW, yToPy(d.y)); c.stroke(); break;
+      case 'v': c.beginPath(); c.moveTo(xToPx(d.x), SB); c.lineTo(xToPx(d.x), GB); c.stroke(); break;
       case 'circle': { c.beginPath(); for (let k = 0; k <= 120; k++) { const t = k / 120 * 2 * Math.PI, X = xToPx(d.x + d.r * Math.cos(t)), Y = yToPy(d.y + d.r * Math.sin(t)); k ? c.lineTo(X, Y) : c.moveTo(X, Y); } c.stroke(); break; }
       case 'f': case 'inv': {
         c.beginPath(); let on = false;
-        if (d.k === 'f') for (let px = 0; px < W; px++) { const y = fx(d.e, pxToX(px)); if (!Number.isFinite(y)) { on = false; continue; } const py = clampPy(yToPy(y)); on ? c.lineTo(px, py) : c.moveTo(px, py); on = true; }
-        else for (let py = SB; py < H; py++) { const x = fx(d.e, pyToY(py)); if (!Number.isFinite(x)) { on = false; continue; } const px = xToPx(x); on ? c.lineTo(px, py) : c.moveTo(px, py); on = true; }
+        if (d.k === 'f') for (let px = 0; px < GW; px++) { const y = fx(d.e, pxToX(px)); if (!Number.isFinite(y)) { on = false; continue; } const py = clampPy(yToPy(y)); on ? c.lineTo(px, py) : c.moveTo(px, py); on = true; }
+        else for (let py = SB; py < GB; py++) { const x = fx(d.e, pyToY(py)); if (!Number.isFinite(x)) { on = false; continue; } const px = xToPx(x); on ? c.lineTo(px, py) : c.moveTo(px, py); on = true; }
         c.stroke(); break;
       }
       case 'tan': {
         const h = 1e-3, y0 = fx(d.e, d.x), m = (fx(d.e, d.x + h) - fx(d.e, d.x - h)) / (2 * h);
-        if (Number.isFinite(y0) && Number.isFinite(m)) { const x1 = S.win.xmin, x2 = S.win.xmax; c.beginPath(); c.moveTo(0, clampPy(yToPy(y0 + m * (x1 - d.x)))); c.lineTo(W, clampPy(yToPy(y0 + m * (x2 - d.x)))); c.stroke(); }
+        if (Number.isFinite(y0) && Number.isFinite(m)) { const x1 = S.win.xmin, x2 = S.win.xmax; c.beginPath(); c.moveTo(0, clampPy(yToPy(y0 + m * (x1 - d.x)))); c.lineTo(GW, clampPy(yToPy(y0 + m * (x2 - d.x)))); c.stroke(); }
         break;
       }
       case 'shade': {
         c.globalAlpha = 0.3; c.beginPath();
-        const pa = d.a === null ? 0 : Math.max(0, xToPx(d.a)), pb = d.b === null ? W - 1 : Math.min(W - 1, xToPx(d.b));
+        const pa = d.a === null ? 0 : Math.max(0, xToPx(d.a)), pb = d.b === null ? GW - 1 : Math.min(GW - 1, xToPx(d.b));
         for (let px = pa; px <= pb; px++) { const x = pxToX(px), lo = fx(d.lo, x), hi = fx(d.hi, x); if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) { c.moveTo(px, clampPy(yToPy(lo))); c.lineTo(px, clampPy(yToPy(hi))); } }
         c.lineWidth = 1.2; c.stroke(); c.globalAlpha = 1; break;
       }
-      case 'text': c.fillStyle = '#111'; c.font = '12px system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(d.t, d.c * (W / 265), SB + d.r * (GH / 165)); break;
+      case 'text': c.fillStyle = '#111'; c.font = '12px system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(d.t, d.c * (GW / 265), SB + d.r * (GH / 165)); break;
       case 'pt': { const X = xToPx(d.x), Y = yToPy(d.y); if (d.mark === 2) c.strokeRect(X - 2.5, Y - 2.5, 5, 5); else if (d.mark === 3) { c.beginPath(); c.moveTo(X - 3, Y); c.lineTo(X + 3, Y); c.moveTo(X, Y - 3); c.lineTo(X, Y + 3); c.stroke(); } else c.fillRect(X - 1.5, Y - 1.5, 3, 3); break; }
-      case 'pxl': c.fillRect(d.c * (W / 265), SB + d.r * (GH / 165), 1.5, 1.5); break;
+      case 'pxl': c.fillRect(d.c * (GW / 265), SB + d.r * (GH / 165), 1.5, 1.5); break;
     }
   }
 }
@@ -2120,8 +2121,13 @@ function drawForm() {
 function drawOpts() {
   const o = S.opts, off = o.title ? 1 : 0;
   if (o.title) drawStr(o.title, 0, 0, { color: '#2b4f8a' });
+  const vis = ROWS - off - (o.rows.length + off < ROWS && o.note ? 1 : 0);
+  o.scroll = Math.max(0, Math.min(o.scroll || 0, o.rows.length - vis));
+  if (o.r < o.scroll) o.scroll = o.r;
+  if (o.r >= o.scroll + vis) o.scroll = o.r - vis + 1;
   o.rows.forEach((rw, r0) => {
-    const r = r0 + off;
+    const r = r0 + off - o.scroll;
+    if (r < off || r >= off + vis) return;
     let c = 0; const cur = rw.get();
     if (rw.label) { drawStr(rw.label, r, 0); c = [...rw.label].length + 1; }
     const rr = r0;
@@ -2133,7 +2139,9 @@ function drawOpts() {
       c += [...label].length + 1;
     });
   });
-  if (o.note) drawStr(o.note, ROWS - 1, 0, { color: '#8a909a' });
+  if (o.note && o.rows.length + off < ROWS) drawStr(o.note, ROWS - 1, 0, { color: '#8a909a' });
+  if (o.scroll + vis < o.rows.length) drawCh('↓', ROWS - 1, COLS - 1, { color: '#2b4f8a' });
+  if (o.scroll > 0) drawCh('↑', off, COLS - 1, { color: '#2b4f8a' });
 }
 
 function drawMenu() {
@@ -2196,11 +2204,11 @@ const ERRHELP = {
 function wrapWords(s, n) { const out = []; let cur = ''; for (const w of s.split(' ')) { if ((cur + ' ' + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) out.push(cur.trim()); return out; }
 
 /* ---- graph ---- */
-const pxToX = px => S.win.xmin + px * (S.win.xmax - S.win.xmin) / (W - 1);
-const xToPx = x => (x - S.win.xmin) / (S.win.xmax - S.win.xmin) * (W - 1);
+const pxToX = px => S.win.xmin + px * (S.win.xmax - S.win.xmin) / (GW - 1);
+const xToPx = x => (x - S.win.xmin) / (S.win.xmax - S.win.xmin) * (GW - 1);
 const yToPy = y => SB + (S.win.ymax - y) / (S.win.ymax - S.win.ymin) * (GH - 1);
 const pyToY = py => S.win.ymax - (py - SB) * (S.win.ymax - S.win.ymin) / (GH - 1);
-const dX = () => (S.win.xmax - S.win.xmin) / (W - 1);
+const dX = () => (S.win.xmax - S.win.xmin) / (GW - 1);
 const clampPy = p => Math.max(-2000, Math.min(2000, p));
 
 function activeFns() { return S.Y.map((y, i) => i).filter(i => S.Y[i].on && S.Y[i].ed.t.length && (() => { try { yAst(i); return true; } catch (e) { return false; } })()); }
@@ -2209,7 +2217,7 @@ function renderGraphBuffer() {
   const c = gx, w = S.win;
   c.save();
   c.fillStyle = '#fff'; c.fillRect(0, 0, W, H);
-  c.beginPath(); c.rect(0, SB, W, GH); c.clip();
+  c.beginPath(); c.rect(0, SB, GW, GH); c.clip();
   const x0 = xToPx(0), y0 = yToPy(0);
   // grid
   if (S.fmt.grid && w.xscl > 0 && w.yscl > 0) {
@@ -2218,10 +2226,10 @@ function renderGraphBuffer() {
       c.fillStyle = '#b9bec7'; c.strokeStyle = '#dfe2e7'; c.lineWidth = 1;
       for (let i = Math.ceil(w.xmin / w.xscl); i * w.xscl <= w.xmax; i++) {
         const px = Math.round(xToPx(i * w.xscl)) + 0.5;
-        if (S.fmt.grid === 2) { c.beginPath(); c.moveTo(px, SB); c.lineTo(px, H); c.stroke(); }
+        if (S.fmt.grid === 2) { c.beginPath(); c.moveTo(px, SB); c.lineTo(px, GB); c.stroke(); }
         else for (let j = Math.ceil(w.ymin / w.yscl); j * w.yscl <= w.ymax; j++) c.fillRect(px - 0.75, Math.round(yToPy(j * w.yscl)) - 0.25, 1.5, 1.5);
       }
-      if (S.fmt.grid === 2) for (let j = Math.ceil(w.ymin / w.yscl); j * w.yscl <= w.ymax; j++) { const py = Math.round(yToPy(j * w.yscl)) + 0.5; c.beginPath(); c.moveTo(0, py); c.lineTo(W, py); c.stroke(); }
+      if (S.fmt.grid === 2) for (let j = Math.ceil(w.ymin / w.yscl); j * w.yscl <= w.ymax; j++) { const py = Math.round(yToPy(j * w.yscl)) + 0.5; c.beginPath(); c.moveTo(0, py); c.lineTo(GW, py); c.stroke(); }
     }
   }
   // axes
@@ -2229,16 +2237,16 @@ function renderGraphBuffer() {
     c.strokeStyle = '#111'; c.lineWidth = 1;
     const ax = Math.round(x0) + 0.5, ay = Math.round(y0) + 0.5;
     if (w.ymin <= 0 && w.ymax >= 0) {
-      c.beginPath(); c.moveTo(0, ay); c.lineTo(W, ay); c.stroke();
+      c.beginPath(); c.moveTo(0, ay); c.lineTo(GW, ay); c.stroke();
       if (w.xscl > 0 && (w.xmax - w.xmin) / w.xscl < 320) for (let i = Math.ceil(w.xmin / w.xscl); i * w.xscl <= w.xmax; i++) { const px = Math.round(xToPx(i * w.xscl)) + 0.5; c.beginPath(); c.moveTo(px, ay - 2.5); c.lineTo(px, ay + 2.5); c.stroke(); }
     }
     if (w.xmin <= 0 && w.xmax >= 0) {
-      c.beginPath(); c.moveTo(ax, SB); c.lineTo(ax, H); c.stroke();
+      c.beginPath(); c.moveTo(ax, SB); c.lineTo(ax, GB); c.stroke();
       if (w.yscl > 0 && (w.ymax - w.ymin) / w.yscl < 220) for (let j = Math.ceil(w.ymin / w.yscl); j * w.yscl <= w.ymax; j++) { const py = Math.round(yToPy(j * w.yscl)) + 0.5; c.beginPath(); c.moveTo(ax - 2.5, py); c.lineTo(ax + 2.5, py); c.stroke(); }
     }
     if (S.fmt.label) {
       c.fillStyle = '#111'; c.font = 'italic 12px system-ui, sans-serif'; c.textAlign = 'right'; c.textBaseline = 'bottom';
-      if (w.ymin <= 0 && w.ymax >= 0) c.fillText('x', W - 3, ay - 3);
+      if (w.ymin <= 0 && w.ymax >= 0) c.fillText('x', GW - 3, ay - 3);
       c.textAlign = 'left'; c.textBaseline = 'top';
       if (w.xmin <= 0 && w.xmax >= 0) c.fillText('y', ax + 4, SB + 2);
     }
@@ -2268,16 +2276,16 @@ function renderGraphBuffer() {
     c.strokeStyle = c.fillStyle = S.Y[i].color; c.lineWidth = sty === 1 ? 3 : sty === 5 ? 1.1 : sty === 0 ? 2 : lw; c.lineJoin = 'round'; c.lineCap = 'round';
     if (sty === 2 || sty === 3) {
       c.save(); c.globalAlpha = 0.22;
-      for (let px = 0; px <= W - 1; px += step) { const y = evalY(i, pxToX(px)); if (!Number.isFinite(y)) continue; const py = Math.max(SB, Math.min(H, yToPy(y))); if (sty === 2) c.fillRect(px, SB, step, py - SB); else c.fillRect(px, py, step, H - py); }
+      for (let px = 0; px <= GW - 1; px += step) { const y = evalY(i, pxToX(px)); if (!Number.isFinite(y)) continue; const py = Math.max(SB, Math.min(GB, yToPy(y))); if (sty === 2) c.fillRect(px, SB, step, py - SB); else c.fillRect(px, py, step, GB - py); }
       c.restore();
     }
     let prev = null; c.beginPath();
-    for (let px = 0; px <= W - 1 + 1e-9; px += step) {
+    for (let px = 0; px <= GW - 1 + 1e-9; px += step) {
       const y = evalY(i, pxToX(px));
       if (!Number.isFinite(y)) { prev = null; continue; }
       const py = clampPy(yToPy(y));
       if (dots) { c.fillRect(px - 1, py - 1, 2, 2); continue; }
-      if (prev && Math.abs(py - prev.py) > GH * 1.2 && (prev.py < SB || prev.py > H || py < SB || py > H)) prev = null;
+      if (prev && Math.abs(py - prev.py) > GH * 1.2 && (prev.py < SB || prev.py > GB || py < SB || py > GB)) prev = null;
       if (prev) c.lineTo(px, py); else c.moveTo(px, py);
       prev = { px, py };
     }
@@ -2293,7 +2301,7 @@ function overlayText(lines) {
   // lines drawn above the bottom edge of the graph
   ctx.font = SANS; ctx.textBaseline = 'alphabetic';
   lines.forEach((l, k) => {
-    const y = H - 6 - (lines.length - 1 - k) * 18;
+    const y = GB - 6 - (lines.length - 1 - k) * 18;
     let x = 4;
     for (const part of l) {
       ctx.textAlign = 'left';
@@ -2309,12 +2317,12 @@ function drawGraph() {
   if (S.graphDirty) renderGraphBuffer();
   ctx.drawImage(gbuf, 0, 0, W, H);
   const g = S.g;
-  ctx.save(); ctx.beginPath(); ctx.rect(0, SB, W, GH); ctx.clip();
+  ctx.save(); ctx.beginPath(); ctx.rect(0, SB, GW, GH); ctx.clip();
   // shaded integral
   if (g.shade) {
     const { fi, a, b } = g.shade;
     ctx.fillStyle = S.Y[fi].color + '55';
-    const pa = Math.max(0, xToPx(Math.min(a, b))), pb = Math.min(W - 1, xToPx(Math.max(a, b)));
+    const pa = Math.max(0, xToPx(Math.min(a, b))), pb = Math.min(GW - 1, xToPx(Math.max(a, b)));
     const y0 = clampPy(yToPy(0));
     ctx.beginPath(); ctx.moveTo(pa, y0);
     for (let px = pa; px <= pb; px += 0.5) { const y = evalY(fi, pxToX(px)); ctx.lineTo(px, Number.isFinite(y) ? clampPy(yToPy(y)) : y0); }
@@ -2349,16 +2357,16 @@ function drawGraph() {
     const cv = curves().find(q => q.i === g.trace.fi);
     if (cv) {
       const p = g.trace.p, pt = cv.at(p), px = xToPx(pt.x), py = yToPy(pt.y);
-      if (Number.isFinite(pt.y) && Number.isFinite(pt.x) && py >= SB && py <= H) {
+      if (Number.isFinite(pt.y) && Number.isFinite(pt.x) && py >= SB && py <= GB) {
         ctx.save(); ctx.translate(Math.round(px) + 0.5, Math.round(py) + 0.5);
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeRect(-4, -4, 8, 8);
         ctx.strokeStyle = S.blink ? cv.color : '#111'; ctx.lineWidth = 2; ctx.strokeRect(-4, -4, 8, 8);
         ctx.restore();
       }
       ctx.font = SANS; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      const tw = Math.min(W - 8, ctx.measureText(cv.label).width);
+      const tw = Math.min(GW - 8, ctx.measureText(cv.label).width);
       ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(2, SB + 2, tw + 6, 18);
-      ctx.fillStyle = cv.color; ctx.fillText(cv.label, 5, SB + 4, W - 10);
+      ctx.fillStyle = cv.color; ctx.fillText(cv.label, 5, SB + 4, GW - 10);
       const F = v => Number.isFinite(v) ? fmtNum(v, 7) : '';
       if (g.result) lines.push([{ t: g.result }]);
       else if (g.calc) lines.push([{ t: g.calc.prompt(), color: '#2b4f8a' }]);
@@ -2373,7 +2381,7 @@ function drawGraph() {
     const { fi, x } = g.trace;
     const y = evalY(fi, x);
     const px = xToPx(x), py = yToPy(y);
-    if (Number.isFinite(y) && py >= SB && py <= H) {
+    if (Number.isFinite(y) && py >= SB && py <= GB) {
       ctx.save(); ctx.translate(Math.round(px) + 0.5, Math.round(py) + 0.5);
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeRect(-4, -4, 8, 8);
       ctx.strokeStyle = S.blink ? S.Y[fi].color : '#111'; ctx.lineWidth = 2; ctx.strokeRect(-4, -4, 8, 8);
@@ -2381,9 +2389,9 @@ function drawGraph() {
     }
     ctx.font = SANS; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     const label = 'Y' + YLAB[fi] + '=' + S.Y[fi].ed.str();
-    const tw = Math.min(W - 8, ctx.measureText(label).width);
+    const tw = Math.min(GW - 8, ctx.measureText(label).width);
     ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(2, SB + 2, tw + 6, 18);
-    ctx.fillStyle = S.Y[fi].color; ctx.fillText(label, 5, SB + 4, W - 10);
+    ctx.fillStyle = S.Y[fi].color; ctx.fillText(label, 5, SB + 4, GW - 10);
     if (g.result) lines.push([{ t: g.result }]);
     else if (g.calc) lines.push([{ t: g.calc.prompt(), color: '#2b4f8a' }]);
     if (g.prompt) lines.push([{ t: g.prompt.label + g.prompt.ed.str() + (S.blink ? '▮' : ' ') }]);
@@ -2404,8 +2412,9 @@ function tableCols() {
 }
 function drawTable() {
   const fns = tableCols();
-  const t = S.table, colW = 80, rowsVis = 8;
-  const cols = [-1, ...fns.slice(t.fcol, t.fcol + 3)];
+  const NC = S._narrow ? 2 : 4;
+  const t = S.table, colW = S._narrow ? W / 4 : W / NC, rowsVis = 8;
+  const cols = [-1, ...fns.slice(t.fcol, t.fcol + NC - 1)];
   ctx.font = SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const headY = SB + 12, rh = 22;
   ctx.fillStyle = '#eef1f5'; ctx.fillRect(0, SB, W, 24);
@@ -2414,7 +2423,7 @@ function drawTable() {
     ctx.fillText(fi === -1 ? PARAM() : fi.label, k * colW + colW / 2, headY);
   });
   ctx.strokeStyle = '#c3c8d0'; ctx.lineWidth = 1;
-  for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(k * colW + 0.5, SB); ctx.lineTo(k * colW + 0.5, SB + 24 + rowsVis * rh); ctx.stroke(); }
+  for (let k = 1; k < NC; k++) { ctx.beginPath(); ctx.moveTo(k * colW + 0.5, SB); ctx.lineTo(k * colW + 0.5, SB + 24 + rowsVis * rh); ctx.stroke(); }
   ctx.beginPath(); ctx.moveTo(0, SB + 24.5); ctx.lineTo(W, SB + 24.5); ctx.stroke();
   let selVal = null, selLab = '';
   for (let r = 0; r < rowsVis; r++) {
@@ -2777,10 +2786,34 @@ function drawToast() {
   lines.forEach((l, k) => ctx.fillText(l, W / 2, y + 7 + k * 17));
 }
 
+const tmpC = document.createElement('canvas'); tmpC.width = W * SCALE; tmpC.height = H * SCALE;
+function snapTo(c) { const x = c.getContext('2d'); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, c.width, c.height); x.drawImage(cv, 0, 0); }
+function drawSplit() {
+  const sp = S.mode.split, k = SCALE;
+  // other half first (table or recent home lines), then the graph in its own half
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  if (sp === 2 || S.screen === 'table') { S._narrow = sp === 2; drawTable(); S._narrow = false; snapTo(tmpC); }
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  drawGraph();
+  if (sp === 2) {
+    ctx.fillStyle = '#fff'; ctx.fillRect(GW, SB, W - GW, GH);
+    ctx.drawImage(tmpC, 0, SB * k, (W / 2) * k, GH * k, GW + 1, SB, W / 2 - 1, GH);
+    ctx.fillStyle = '#111'; ctx.fillRect(GW, SB, 1, GH);
+  } else {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, GB, W, H - GB);
+    ctx.fillStyle = '#111'; ctx.fillRect(0, GB, W, 1);
+    if (S.screen === 'table') ctx.drawImage(tmpC, 0, SB * k, W * k, (H - GB - 1) * k, 0, GB + 1, W, H - GB - 1);
+    else {
+      ctx.font = SANS; ctx.textBaseline = 'alphabetic';
+      S.hist.slice(-4).forEach((h, j) => { const t = String(h.t).split('\n')[0]; ctx.fillStyle = '#111'; ctx.textAlign = h.a === 'R' ? 'right' : 'left'; ctx.fillText(t, h.a === 'R' ? W - 4 : 4, GB + 24 + j * 24, W - 8); });
+    }
+  }
+}
 let raf = 0;
 function redraw() { if (!raf) raf = requestAnimationFrame(draw); }
 function draw() {
   raf = 0;
+  setArea();
   ctx.save();
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
   if (S.off) { ctx.fillStyle = '#0d0e10'; ctx.fillRect(0, 0, W, H); ctx.restore(); return; }
@@ -2791,8 +2824,8 @@ function draw() {
     case 'opts': drawOpts(); break;
     case 'menu': drawMenu(); break;
     case 'error': drawError(); break;
-    case 'graph': drawGraph(); break;
-    case 'table': drawTable(); break;
+    case 'graph': if (S.mode.split) drawSplit(); else drawGraph(); break;
+    case 'table': if (S.mode.split) drawSplit(); else drawTable(); break;
     case 'ledit': drawLedit(); break;
     case 'medit': drawMedit(); break;
     case 'pedit': drawPedit(); break;
@@ -3361,6 +3394,7 @@ function openOpts(kind) {
         { opts: ['FUNC', 'PAR', 'POL', 'SEQ'], get: () => GM(), set: i => { if (S.mode.graph !== i) { S.mode.graph = i; S.yeq.sel = 0; S.g.trace = null; S.table.fcol = 0; S.table.col = 0; } S.graphDirty = true; } },
         { opts: ['THICK', 'THIN', 'DOT'], get: () => S.mode.line, set: i => { S.mode.line = i; S.graphDirty = true; } },
         { opts: ['REAL', 'a+bi', 're^θi'], get: () => S.mode.cx, set: i => S.mode.cx = i },
+        { opts: ['FULL', 'HORIZONTAL', 'G-T'], get: () => S.mode.split || 0, set: i => { S.mode.split = i; setArea(); S.graphDirty = true; S.g.trace = null; } },
         { label: 'FRAC:', opts: ['n/d', 'Un/d'], get: () => S.mode.ftype || 0, set: i => S.mode.ftype = i },
         { label: 'ANSWERS:', opts: ['AUTO', 'DEC'], get: () => S.mode.ans || 0, set: i => S.mode.ans = i },
       ],
@@ -3402,16 +3436,16 @@ function openTrace(x) {
   g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; g.shade = null;
   if (GM() !== 0) {
     const cvs = curves();
-    if (!cvs.length) { g.mode = 'free'; g.cx = 160; g.cy = Math.round(SB + GH / 2); return; }
+    if (!cvs.length) { g.mode = 'free'; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); return; }
     const keep = g.trace && g.trace.p !== undefined && cvs.some(q => q.i === g.trace.fi);
     g.mode = 'trace'; g.trace = { fi: keep ? g.trace.fi : cvs[0].i, p: paramRange()[0] };
     return;
   }
   if (g.trace && g.trace.p !== undefined) g.trace = null;
-  if (!fns.length) { g.mode = 'free'; g.cx = 160; g.cy = Math.round(SB + GH / 2); return; }
+  if (!fns.length) { g.mode = 'free'; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); return; }
   const fi = g.trace && fns.includes(g.trace.fi) ? g.trace.fi : fns[0];
   g.mode = 'trace';
-  g.trace = { fi, x: x !== undefined ? x : pxToX(Math.round((W - 1) / 2)) };
+  g.trace = { fi, x: x !== undefined ? x : pxToX(Math.round((GW - 1) / 2)) };
 }
 function openTable() { closeGraphState(); S.screen = 'table'; }
 
@@ -3426,13 +3460,13 @@ function zoom(type) {
     case 'int': setWin({ xmin: -132, xmax: 132, xscl: 10, ymin: -82, ymax: 82, yscl: 10 }); break;
     case 'trig': { const d = S.mode.angle === 1; setWin({ xmin: d ? -352.5 : -352.5 * Math.PI / 180, xmax: d ? 352.5 : 352.5 * Math.PI / 180, xscl: d ? 90 : Math.PI / 2, ymin: -4, ymax: 4, yscl: 1 }); break; }
     case 'square': {
-      const ux = (w.xmax - w.xmin) / (W - 1), uy = (w.ymax - w.ymin) / (GH - 1), u = Math.max(ux, uy);
+      const ux = (w.xmax - w.xmin) / (GW - 1), uy = (w.ymax - w.ymin) / (GH - 1), u = Math.max(ux, uy);
       const cx = (w.xmin + w.xmax) / 2, cy = (w.ymin + w.ymax) / 2;
-      setWin({ xmin: cx - u * (W - 1) / 2, xmax: cx + u * (W - 1) / 2, ymin: cy - u * (GH - 1) / 2, ymax: cy + u * (GH - 1) / 2 }); break;
+      setWin({ xmin: cx - u * (GW - 1) / 2, xmax: cx + u * (GW - 1) / 2, ymin: cy - u * (GH - 1) / 2, ymax: cy + u * (GH - 1) / 2 }); break;
     }
     case 'fit': {
       let lo = Infinity, hi = -Infinity;
-      for (const i of activeFns()) for (let px = 0; px < W; px++) { const y = evalY(i, pxToX(px)); if (Number.isFinite(y)) { lo = Math.min(lo, y); hi = Math.max(hi, y); } }
+      for (const i of activeFns()) for (let px = 0; px < GW; px++) { const y = evalY(i, pxToX(px)); if (Number.isFinite(y)) { lo = Math.min(lo, y); hi = Math.max(hi, y); } }
       if (!Number.isFinite(lo)) break;
       if (lo === hi) { lo -= 1; hi += 1; }
       setWin({ ymin: lo, ymax: hi }); break;
@@ -3440,7 +3474,7 @@ function zoom(type) {
     case 'prev': if (S.prevWin) { const p = S.prevWin; S.prevWin = { ...S.win }; Object.assign(S.win, p); S.graphDirty = true; } break;
     case 'in': case 'out': case 'box': {
       openGraph(); if (S.screen !== 'graph') return;
-      const g = S.g; g.mode = 'free'; g.zoom = { type, p1: null }; g.cx = 160; g.cy = Math.round(SB + GH / 2); g.trace = null;
+      const g = S.g; g.mode = 'free'; g.zoom = { type, p1: null }; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); g.trace = null;
       return;
     }
   }
@@ -3458,7 +3492,7 @@ function zoomEnter() {
   const f = z.type === 'in' ? 1 / 4 : 4;
   const hx = (w.xmax - w.xmin) * f / 2, hy = (w.ymax - w.ymin) * f / 2;
   setWin({ xmin: X - hx, xmax: X + hx, ymin: Y - hy, ymax: Y + hy });
-  g.cx = 160; g.cy = Math.round(SB + GH / 2);
+  g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2);
 }
 
 /* ---- CALC ---- */
@@ -3904,13 +3938,13 @@ const HANDLERS = {
       return false;
     }
     const arrows = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
-    if (g.mode === 'none' && arrows.includes(a)) { g.mode = 'free'; g.cx = 160; g.cy = Math.round(SB + GH / 2); return true; }
+    if (g.mode === 'none' && arrows.includes(a)) { g.mode = 'free'; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); return true; }
     if (g.mode === 'free') {
       switch (a) {
         case 'UP': g.cy = Math.max(SB, g.cy - 1); return true;
-        case 'DOWN': g.cy = Math.min(H - 1, g.cy + 1); return true;
+        case 'DOWN': g.cy = Math.min(GB - 1, g.cy + 1); return true;
         case 'LEFT': g.cx = Math.max(0, g.cx - 1); return true;
-        case 'RIGHT': g.cx = Math.min(W - 1, g.cx + 1); return true;
+        case 'RIGHT': g.cx = Math.min(GW - 1, g.cx + 1); return true;
         case 'ENTER': if (g.zoom) zoomEnter(); return true;
         case 'CLEAR': case 'BS': if (g.zoom) { g.zoom = null; } g.mode = 'none'; return true;
       }
@@ -3936,7 +3970,7 @@ const HANDLERS = {
         case 'LEFT': case 'RIGHT': {
           g.result = null; g.info = null; if (!g.calc) g.shade = null;
           const dx = dX(); let px = Math.round(xToPx(t.x)) + (a === 'LEFT' ? -1 : 1);
-          if (px < 0 || px > W - 1) {
+          if (px < 0 || px > GW - 1) {
             const sh = (S.win.xmax - S.win.xmin) / 4 * (px < 0 ? -1 : 1);
             S.win.xmin += sh; S.win.xmax += sh; S.graphDirty = true;
             px = Math.round(xToPx(t.x + (a === 'LEFT' ? -dx : dx)));
@@ -4293,7 +4327,7 @@ K('right', '▶', '', '', 'RIGHT', 'RIGHT', 'RIGHT');
 
 function press(id) {
   const k = KEYS[id]; if (!k) return;
-  S.seqGen++;
+  S.seqGen++; setArea();
   if (S.off) { if (id === 'on') { S.off = false; redraw(); } return; }
   if (id === 'second') { S.second = !S.second; S.blink = true; redraw(); return; }
   if (id === 'alpha') {
