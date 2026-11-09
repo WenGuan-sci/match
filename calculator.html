@@ -2887,6 +2887,7 @@ function draw() {
     case 'medit': drawMedit(); break;
     case 'pedit': drawPedit(); break;
     case 'appform': drawAppForm(); break;
+    case 'simul': drawSimul(); break;
     case 'pnew': drawPnew(); break;
     case 'prun': drawPrun(); break;
     case 'solver': drawSolver(); break;
@@ -3397,6 +3398,265 @@ function openSimult() {
   });
 }
 
+
+/* =================================================================
+   PlySmlt2-style app: MAIN MENU, SIMULT EQN SOLVER (mode, matrix, solution)
+   ================================================================= */
+const APF = '13px "DejaVu Sans Mono", Menlo, Consolas, monospace';
+const APW = 7.9, APL = 19;
+function apText(str, x, y, o = {}) {
+  ctx.font = o.font || APF; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  const w = ctx.measureText(str).width;
+  if (o.bg) { ctx.fillStyle = o.bg; ctx.fillRect(x - 2, y - 13, w + 4, 17); }
+  ctx.fillStyle = o.color || (o.bg ? '#fff' : '#111');
+  ctx.fillText(str, x, y);
+  return w;
+}
+function apTitle(t) {
+  ctx.fillStyle = '#2b4f8a'; ctx.fillRect(0, SB, W, 19);
+  apText(t, 6, SB + 14, { color: '#fff', font: '700 12.5px system-ui, -apple-system, "Segoe UI", sans-serif' });
+}
+// the five soft keys along the bottom, driven by Y= WINDOW ZOOM TRACE GRAPH
+function apBar(labels) {
+  const y = H - 19, w = W / 5;
+  ctx.fillStyle = '#d9dde3'; ctx.fillRect(0, y - 1, W, 20);
+  labels.forEach((l, k) => {
+    if (!l) return;
+    ctx.fillStyle = '#fff'; roundRect(ctx, k * w + 2, y + 1, w - 4, 16, 3); ctx.fill();
+    ctx.strokeStyle = '#8a909a'; ctx.lineWidth = 1; roundRect(ctx, k * w + 2.5, y + 1.5, w - 5, 15, 3); ctx.stroke();
+    ctx.fillStyle = '#111'; ctx.font = '700 10.5px system-ui, -apple-system, "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(l, k * w + w / 2, y + 9.5);
+  });
+}
+const SIMN = 10;
+function simState() {
+  return S.sim || (S.sim = { stage: 'menu', menuSel: 0, neq: 3, nunk: 3, mr: 0, mc: 0, r: 0, c: 0, off: 0, coff: 0, ed: null, m: Array.from({ length: SIMN }, () => Array(SIMN + 1).fill(0)), sol: null, solScroll: 0, showRref: false, page: null });
+}
+function openPlySmlt() { closeGraphState(); const Q = simState(); Q.stage = 'menu'; Q.ed = null; S.screen = 'simul'; }
+const SIM_MENU = ['POLY ROOT FINDER', 'SIMULT EQN SOLVER', 'ABOUT', 'POLY ROOT FINDER HELP', 'SIMULT EQN SOLVER HELP', 'QUIT APP'];
+const SIM_PAGES = {
+  about: ['PlySmlt2 (web version)', '', 'Polynomial root finder and', 'simultaneous equation solver.', '', 'Press any key.'],
+  polyhelp: ['POLY ROOT FINDER', '', 'Pick the order, then enter', 'the coefficients a(n)...a0.', 'ALPHA+ENTER solves.', 'Complex roots show as a+bi.', '', 'Press any key.'],
+  simhelp: ['SIMULT EQN SOLVER', '', 'MODE: choose how many', 'equations and unknowns.', 'NEXT: enter the system', 'matrix [A | b] cell by cell.', 'SOLVE finds X1, X2, ...', 'RREF shows the reduced', 'matrix. STO▸ saves the', 'solution to L1.', '', 'Press any key.'],
+};
+function simMatrixRows(Q) { return Q.m.slice(0, Q.neq).map(r => r.slice(0, Q.nunk).concat([r[SIMN]])); }
+function simSolve(Q) {
+  const n = Q.nunk, A = simMatrixRows(Q), R = rowReduce(A, n, true);
+  Q.rref = R;
+  if (R.some(r => r.slice(0, n).every(x => x === 0) && r[n] !== 0)) return { kind: 'none', lines: ['NO SOLUTION FOUND'] };
+  const pivots = []; R.forEach(r => { const j = r.slice(0, n).findIndex(x => x !== 0); if (j >= 0) pivots.push(j); });
+  if (pivots.length === n) {
+    const x = Array(n).fill(0); R.forEach(r => { const j = r.slice(0, n).findIndex(x2 => x2 !== 0); if (j >= 0) x[j] = r[n]; });
+    return { kind: 'one', x, lines: x.map((v, k) => 'X' + (k + 1) + '=' + fmtNum(v)) };
+  }
+  // infinitely many: write each pivot variable in terms of the free ones
+  const free = [...Array(n).keys()].filter(j => !pivots.includes(j));
+  const lines = ['INFINITE SOLUTIONS'];
+  for (let j = 0; j < n; j++) {
+    if (free.includes(j)) { lines.push('X' + (j + 1) + '=X' + (j + 1)); continue; }
+    const r = R.find(row => row.slice(0, n).findIndex(x2 => x2 !== 0) === j);
+    let t = r[n] !== 0 || free.every(f => r[f] === 0) ? fmtNum(r[n]) : '';
+    for (const f of free) {
+      const c = -r[f]; if (c === 0) continue;
+      const mag = Math.abs(c) === 1 ? '' : fmtNum(Math.abs(c));
+      t += (t ? (c < 0 ? '-' : '+') : (c < 0 ? '⁻' : '')) + mag + 'X' + (f + 1);
+    }
+    lines.push('X' + (j + 1) + '=' + t);
+  }
+  return { kind: 'inf', lines };
+}
+function simCommit(Q) {
+  if (!Q.ed) return true;
+  if (!Q.ed.t.length) { Q.ed = null; return true; }
+  try { const v = evalTokens(Q.ed.t); Q.m[Q.r][Q.c === Q.nunk ? SIMN : Q.c] = v; Q.ed = null; return true; }
+  catch (e) { if (!(e instanceof CalcError)) throw e; const keep = Q.ed.t.slice(); showError(e.type, () => { S.screen = 'simul'; Q.ed = new Ed(keep); }); return false; }
+}
+function drawSimul() {
+  const Q = simState();
+  if (Q.page) {
+    apTitle(Q.page === 'about' ? 'ABOUT' : 'HELP');
+    SIM_PAGES[Q.page].forEach((l, k) => apText(l, 6, SB + 38 + k * APL));
+    return;
+  }
+  if (Q.stage === 'menu') {
+    apTitle('MAIN MENU');
+    SIM_MENU.forEach((l, k) => {
+      const y = SB + 42 + k * 24, sel = k === Q.menuSel;
+      const w = apText((k + 1) + ':', 8, y, sel ? { bg: '#111' } : {});
+      apText(l, 8 + w + 4, y);
+    });
+    return;
+  }
+  if (Q.stage === 'mode') {
+    apTitle('SIMULT EQN SOLVER MODE');
+    const nums = ['2', '3', '4', '5', '6', '7', '8', '9', '10'];
+    const rows = [
+      { label: 'EQUATIONS', opts: nums, cur: Q.neq - 2 },
+      { label: 'UNKNOWNS', opts: nums, cur: Q.nunk - 2 },
+      { label: '', opts: ['NORMAL', 'SCI', 'ENG'], cur: S.mode.notation },
+      { label: '', opts: ['FLOAT', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], cur: S.mode.fix + 1 },
+      { label: '', opts: ['RADIAN', 'DEGREE'], cur: S.mode.angle },
+    ];
+    rows.forEach((rw, i) => {
+      const y = SB + 42 + i * 26;
+      let x = 6;
+      if (rw.label) x += apText(rw.label, x, y) + 8;
+      rw.opts.forEach((o, j) => {
+        const here = i === Q.mr && j === Q.mc;
+        const st = here && S.blink ? { bg: '#111' } : j === rw.cur ? { bg: '#2b6cc4' } : {};
+        x += apText(o, x, y, st) + 7;
+      });
+    });
+    apBar(['MAIN', 'MODE', '', '', 'NEXT']);
+    return;
+  }
+  if (Q.stage === 'mat' || (Q.stage === 'sol' && Q.showRref)) {
+    const showR = Q.stage === 'sol';
+    const rows = showR ? Q.rref : simMatrixRows(Q), nc = Q.nunk + 1;
+    apTitle(showR ? 'RREF (' + Q.neq + '×' + nc + ')' : 'SYSTEM MATRIX (' + Q.neq + '×' + nc + ')');
+    const visC = 4, visR = 7, cw = 70, rh = 21, x0 = 14, y0 = SB + 30;
+    if (!showR) {
+      if (Q.c < Q.coff) Q.coff = Q.c; if (Q.c >= Q.coff + visC) Q.coff = Q.c - visC + 1;
+      if (Q.r < Q.off) Q.off = Q.r; if (Q.r >= Q.off + visR) Q.off = Q.r - visR + 1;
+    }
+    const coff = showR ? 0 : Q.coff, roff = showR ? 0 : Q.off;
+    const nr = Math.min(visR, rows.length - roff), ncv = Math.min(visC, nc - coff);
+    // brackets
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 1.4;
+    const top = y0 - 2, bot = y0 + nr * rh + 2, right = x0 + ncv * cw + 4;
+    ctx.beginPath(); ctx.moveTo(x0 + 3, top); ctx.lineTo(x0 - 2, top); ctx.lineTo(x0 - 2, bot); ctx.lineTo(x0 + 3, bot); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(right - 5, top); ctx.lineTo(right, top); ctx.lineTo(right, bot); ctx.lineTo(right - 5, bot); ctx.stroke();
+    // dashed line before the constants column
+    if (Q.nunk >= coff && Q.nunk < coff + ncv) { const xb = x0 + (Q.nunk - coff) * cw; ctx.save(); ctx.setLineDash([2, 2]); ctx.strokeStyle = '#8a909a'; ctx.beginPath(); ctx.moveTo(xb, top + 2); ctx.lineTo(xb, bot - 2); ctx.stroke(); ctx.restore(); }
+    for (let i = 0; i < nr; i++) for (let j = 0; j < ncv; j++) {
+      const r = roff + i, c = coff + j, v = rows[r][c];
+      const cx = x0 + j * cw, cy = y0 + i * rh, sel = !showR && r === Q.r && c === Q.c;
+      if (sel) { ctx.fillStyle = Q.ed ? '#cfe0f7' : '#2b6cc4'; ctx.fillRect(cx + 2, cy, cw - 4, rh - 2); }
+      ctx.font = SANS; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillStyle = sel && !Q.ed ? '#fff' : '#111';
+      ctx.fillText(fitNum(v, cw - 10), cx + cw - 6, cy + rh / 2);
+    }
+    if (coff > 0) apText('◂', 2, y0 + 14, { color: '#2b4f8a' });
+    if (coff + ncv < nc) apText('▸', W - 9, y0 + 14, { color: '#2b4f8a' });
+    if (!showR) {
+      const lab = 'R' + (Q.r + 1) + 'C' + (Q.c + 1) + '=';
+      const y = H - 26;
+      ctx.fillStyle = '#eef1f5'; ctx.fillRect(0, y - 14, W, 19);
+      const w = apText(lab, 6, y);
+      const txt = Q.ed ? Q.ed.str() : fmtNum(rows[Q.r][Q.c]);
+      apText(txt, 6 + w, y);
+      if (Q.ed && S.blink) { ctx.font = APF; const cx2 = 6 + w + ctx.measureText(linearize(Q.ed.t.slice(0, Q.ed.c)).join('')).width; ctx.fillStyle = '#111'; ctx.fillRect(cx2, y - 12, 2, 15); }
+      apBar(['MAIN', 'MODE', 'CLEAR', 'LOAD', 'SOLVE']);
+    } else apBar(['MAIN', 'MODE', 'SYSM', 'STO▸', 'SOLN']);
+    return;
+  }
+  // solution
+  apTitle('SOLUTION');
+  const L = Q.sol.lines, vis = 8;
+  Q.solScroll = Math.max(0, Math.min(Q.solScroll, L.length - vis));
+  L.slice(Q.solScroll, Q.solScroll + vis).forEach((l, k) => apText(l, 8, SB + 40 + k * 20, k + Q.solScroll === 0 && Q.sol.kind !== 'one' ? { color: '#b3141b' } : {}));
+  if (Q.solScroll + vis < L.length) apText('↓', W - 12, H - 26, { color: '#2b4f8a' });
+  apBar(['MAIN', 'MODE', 'SYSM', 'STO▸', 'RREF']);
+}
+function simKey(a) {
+  const Q = simState();
+  if (a === 'QUIT') { Q.ed = null; goHome(); return true; }
+  if (Q.page) { Q.page = null; return true; }
+  if (Q.stage === 'menu') {
+    const pick = k => {
+      if (k === 0) { openPoly(); return; }
+      if (k === 1) { Q.stage = 'mode'; Q.mr = 0; Q.mc = Q.neq - 2; return; }
+      if (k === 2) { Q.page = 'about'; return; }
+      if (k === 3) { Q.page = 'polyhelp'; return; }
+      if (k === 4) { Q.page = 'simhelp'; return; }
+      goHome();
+    };
+    if (a === 'UP') Q.menuSel = (Q.menuSel + 5) % 6;
+    else if (a === 'DOWN') Q.menuSel = (Q.menuSel + 1) % 6;
+    else if (a === 'ENTER') pick(Q.menuSel);
+    else if (/^i:[1-6]$/.test(a)) { Q.menuSel = +a[2] - 1; pick(Q.menuSel); }
+    else if (a === 'CLEAR') goHome();
+    return true;
+  }
+  // soft keys
+  const F = { YEQ: 0, WINDOW: 1, ZOOM: 2, TRACE: 3, GRAPH: 4 }[a];
+  if (F !== undefined) {
+    if (Q.stage === 'mat' && !simCommit(Q)) return true;
+    if (F === 0) { Q.stage = 'menu'; Q.ed = null; return true; }
+    if (F === 1) { Q.stage = 'mode'; Q.mr = 0; Q.mc = Q.neq - 2; Q.ed = null; return true; }
+    if (Q.stage === 'mode') { if (F === 4) { Q.stage = 'mat'; Q.r = Math.min(Q.r, Q.neq - 1); Q.c = Math.min(Q.c, Q.nunk); } return true; }
+    if (Q.stage === 'mat') {
+      if (F === 2) { Q.m.forEach(r => r.fill(0)); Q.r = Q.c = 0; toast('Matrix cleared', 900); }
+      if (F === 3) openMenu({ keepScreen: true, tabs: mkTabs([{ title: 'LOAD', items: 'ABCDEFGHIJ'.split('').map(k => ({ label: '[' + k + ']' + (S.mats[k] ? ' ' + S.mats[k].length + '×' + S.mats[k][0].length : ''), dim: !S.mats[k], act: () => simLoad(k) })) }]) });
+      if (F === 4) { Q.sol = simSolve(Q); Q.stage = 'sol'; Q.showRref = false; Q.solScroll = 0; }
+      return true;
+    }
+    if (Q.stage === 'sol') {
+      if (F === 2) { Q.stage = 'mat'; Q.showRref = false; }
+      if (F === 3) { if (Q.sol.kind === 'one') { S.lists[0] = Q.sol.x.slice(); toast('Solution stored to L1', 1500); } else toast('Only a unique solution can be stored', 1500); }
+      if (F === 4) Q.showRref = !Q.showRref;
+      return true;
+    }
+  }
+  if (Q.stage === 'mode') {
+    const lens = [9, 9, 3, 11, 2];
+    switch (a) {
+      case 'UP': Q.mr = (Q.mr + 4) % 5; Q.mc = [Q.neq - 2, Q.nunk - 2, S.mode.notation, S.mode.fix + 1, S.mode.angle][Q.mr]; return true;
+      case 'DOWN': Q.mr = (Q.mr + 1) % 5; Q.mc = [Q.neq - 2, Q.nunk - 2, S.mode.notation, S.mode.fix + 1, S.mode.angle][Q.mr]; return true;
+      case 'LEFT': Q.mc = (Q.mc + lens[Q.mr] - 1) % lens[Q.mr]; return true;
+      case 'RIGHT': Q.mc = (Q.mc + 1) % lens[Q.mr]; return true;
+      case 'ENTER':
+        if (Q.mr === 0) Q.neq = Q.mc + 2; else if (Q.mr === 1) Q.nunk = Q.mc + 2;
+        else if (Q.mr === 2) S.mode.notation = Q.mc; else if (Q.mr === 3) S.mode.fix = Q.mc - 1; else S.mode.angle = Q.mc;
+        return true;
+      case 'CLEAR': Q.stage = 'menu'; return true;
+    }
+    return true;
+  }
+  if (Q.stage === 'mat') {
+    const nc = Q.nunk + 1;
+    if (Q.ed) {
+      switch (a) {
+        case 'LEFT': Q.ed.left(); return true;
+        case 'RIGHT': Q.ed.right(); return true;
+        case 'CLEAR': Q.ed.clear(); return true;
+        case 'DEL': Q.ed.del(); return true;
+        case 'BS': Q.ed.bs(); return true;
+      }
+      if (a.startsWith('i:')) return false;
+      if (!simCommit(Q)) return true;
+      if (a === 'ENTER') { if (Q.c < nc - 1) Q.c++; else if (Q.r < Q.neq - 1) { Q.r++; Q.c = 0; } return true; }
+    }
+    switch (a) {
+      case 'UP': if (Q.r > 0) Q.r--; return true;
+      case 'DOWN': if (Q.r < Q.neq - 1) Q.r++; return true;
+      case 'LEFT': if (Q.c > 0) Q.c--; else if (Q.r > 0) { Q.r--; Q.c = nc - 1; } return true;
+      case 'RIGHT': if (Q.c < nc - 1) Q.c++; else if (Q.r < Q.neq - 1) { Q.r++; Q.c = 0; } return true;
+      case 'ENTER': if (Q.c < nc - 1) Q.c++; else if (Q.r < Q.neq - 1) { Q.r++; Q.c = 0; } return true;
+      case 'CLEAR': Q.ed = new Ed([]); return true;
+      case 'SOLVE': Q.sol = simSolve(Q); Q.stage = 'sol'; Q.showRref = false; Q.solScroll = 0; return true;
+      case 'DEL': case 'BS': return true;
+    }
+    return false;
+  }
+  if (Q.stage === 'sol') {
+    if (a === 'UP') { Q.solScroll--; return true; }
+    if (a === 'DOWN') { Q.solScroll++; return true; }
+    if (a === 'CLEAR') { Q.stage = 'mat'; Q.showRref = false; return true; }
+    return true;
+  }
+  return true;
+}
+function simLoad(k) {
+  const Q = simState(), m = S.mats[k];
+  S.screen = 'simul';
+  if (!m) return;
+  if (m.length > SIMN || m[0].length < 3 || m[0].length > SIMN + 1) { toast('Matrix must be up to 10 rows and 3–11 columns', 2000); return; }
+  Q.neq = Math.max(2, m.length); Q.nunk = m[0].length - 1;
+  Q.m.forEach(r => r.fill(0));
+  m.forEach((row, i) => row.forEach((v, j) => { Q.m[i][j === row.length - 1 ? SIMN : j] = v; }));
+  Q.r = Q.c = 0; Q.stage = 'mat';
+}
+
 /* =================================================================
    Screen openers
    ================================================================= */
@@ -3771,8 +4031,7 @@ const MENUS = {
   F4: () => ({ tabs: mkTabs([{ title: 'YVAR', items: YLAB.map(d => T('Y' + d)) }]) }),
   APPS: () => ({ home: true, tabs: mkTabs([{ title: 'APPLICATIONS', items: [
     { label: 'Finance', act: () => openMenu(MENUS.FINANCE()) },
-    { label: 'Poly Root Finder', act: openPoly },
-    { label: 'Simult Eqn Solver', act: openSimult },
+    { label: 'PlySmlt2', act: openPlySmlt },
   ] }]) }),
   FINANCE: () => ({ tabs: mkTabs([{ title: 'CALC', items: [
     { label: 'TVM Solver…', act: openTVM }, T('tvm_Pmt'), T('tvm_I%'), T('tvm_PV'), T('tvm_N'), T('tvm_FV'), T('npv('), T('irr('), T('►Nom('), T('►Eff('),
@@ -3822,6 +4081,7 @@ function editorFor(screen) {
   if (screen === 'medit') return S.medit.ed;
   if (screen === 'pedit') return S.pedit.lines[S.pedit.row];
   if (screen === 'appform') return S.af.ed;
+  if (screen === 'simul') return S.sim && S.sim.stage === 'mat' ? S.sim.ed : null;
   if (screen === 'table') return S.table.ed || null;
   if (screen === 'pnew') return S.pnew.ed;
   if (screen === 'prun') return S.prun.input && S.prun.input.ed;
@@ -3847,6 +4107,7 @@ function insertTok(tok) {
   if (S.screen === 'solver' && S.solver.stage === 1 && !S.solver.ed && solverRows()[S.solver.sel] !== 'bound') S.solver.ed = new Ed([]);
   if (S.screen === 'pnew' && !/^[A-Z0-9θ]$/.test(tok)) return;
   if (S.screen === 'table') { if (!(S.tbl.indAsk && S.table.col === 0)) return; if (!S.table.ed) S.table.ed = new Ed([]); }
+  if (S.screen === 'simul') { const Q = simState(); if (Q.stage !== 'mat') return; if (!Q.ed) Q.ed = new Ed([]); }
   if (S.screen === 'appform') { const r = afRows()[S.af.sel]; if (!r || r.opts || r.act) return; if (!S.af.ed) S.af.ed = new Ed([]); }
   if (S.screen === 'prun' && !(S.prun.input)) { if (S.run && S.run.active) return; goHome(); }
   const ed = editorFor(S.screen);
@@ -4156,6 +4417,7 @@ const HANDLERS = {
     }
     return false;
   },
+  simul(a) { return simKey(a); },
   appform(a) {
     const A = S.af, rows = afRows(), r = rows[A.sel];
     const doSolve = () => { if (!afCommit()) return; try { A.solve(r); } catch (e) { if (!(e instanceof CalcError)) throw e; showError(e.type, () => { S.screen = 'appform'; }); } };
