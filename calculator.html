@@ -8,10 +8,10 @@
 <style>
 :root{
   --page:#e7e9ee; --page2:#cfd4dc; --ink:#2a2f38; --muted:#5f6775;
-  --body1:#30333a; --body2:#17191d; --edge:#08090b;
+  --body1:#f3cdbf; --body2:#d9a091; --body3:#b97a6c; --edge:#8f5a4f;
   --k-dark:#25272c; --k-dark2:#17181b; --k-light:#f1f2f4; --k-light2:#d6d9de;
   --k-op:#c9cdd4; --k-op2:#aab0b9; --k-blue:#4e9fdc; --k-blue2:#2f7fbd; --k-green:#5bb565; --k-green2:#3d9147;
-  --l-2nd:#74bdf0; --l-alpha:#86d38c; --l-txt:#e9ebee;
+  --l-2nd:#123f73; --l-alpha:#1d5a24; --l-txt:#e9ebee;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){ --page:#15171b; --page2:#0b0c0f; --ink:#d8dce3; --muted:#8c94a2; }
@@ -31,14 +31,14 @@ body{
 .stage{position:relative;margin:10px auto 0;flex:none}
 .calc{
   position:absolute;top:0;left:0;width:384px;transform-origin:0 0;
-  background:linear-gradient(160deg,var(--body1) 0%,var(--body2) 60%,#111216 100%);
+  background:linear-gradient(155deg,#f8dccf 0%,var(--body1) 18%,var(--body2) 55%,var(--body3) 82%,#c98b7c 100%);
   border-radius:38px 38px 64px 64px/30px 30px 90px 90px;
   padding:16px 18px 30px;
-  box-shadow:0 0 0 2px var(--edge), inset 0 2px 1px rgba(255,255,255,.12), inset 0 -6px 12px rgba(0,0,0,.5), 0 24px 50px rgba(0,0,0,.35), 0 6px 14px rgba(0,0,0,.25);
+  box-shadow:0 0 0 2px var(--edge), inset 0 2px 1px rgba(255,255,255,.55), inset 0 -6px 14px rgba(110,55,45,.35), inset 2px 0 6px rgba(255,255,255,.25), 0 24px 50px rgba(80,40,30,.35), 0 6px 14px rgba(0,0,0,.2);
 }
-.brand{display:flex;justify-content:space-between;align-items:baseline;padding:0 8px 8px;color:#d4d8de}
+.brand{display:flex;justify-content:space-between;align-items:baseline;padding:0 8px 8px;color:#5b2f27}
 .brand b{font-size:13px;letter-spacing:.16em;font-weight:700}
-.brand span{font-size:9.5px;letter-spacing:.2em;color:#9aa1ad}
+.brand span{font-size:9.5px;letter-spacing:.2em;color:#7d4a3f}
 .bezel{
   background:linear-gradient(#0d0e10,#060607);border-radius:16px;padding:13px 13px 11px;
   box-shadow:inset 0 2px 6px rgba(0,0,0,.9),0 1px 0 rgba(255,255,255,.08);
@@ -46,7 +46,7 @@ body{
 .screen{position:relative;width:100%;aspect-ratio:4/3;background:#fff;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px #000}
 .screen canvas{width:100%;height:100%;display:block;image-rendering:auto}
 .bezel-foot{display:flex;justify-content:center;gap:6px;padding-top:7px}
-.bezel-foot i{width:16px;height:3px;border-radius:2px;background:#202227}
+.bezel-foot i{width:16px;height:3px;border-radius:2px;background:#3a2a27}
 .keys{margin-top:12px}
 .row{display:grid;grid-template-columns:repeat(5,1fr);column-gap:9px;row-gap:3px}
 .k{display:flex;flex-direction:column;align-items:stretch;min-width:0}
@@ -74,9 +74,9 @@ body{
 .k.sm button{font-size:12px}
 .mid{display:grid;grid-template-columns:repeat(5,1fr);column-gap:9px;row-gap:3px;margin:8px 0 6px}
 .dpad{grid-column:4 / span 2;grid-row:1 / span 2;position:relative;align-self:center;justify-self:center;width:104px;height:92px}
-.dpad .ring{position:absolute;inset:4px 8px;border-radius:50%;background:radial-gradient(circle at 50% 35%,#4a4e56,#26282d 70%);box-shadow:0 3px 0 #000,0 4px 8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.15)}
-.dpad button{position:absolute;appearance:none;border:0;background:transparent;cursor:pointer;color:#dfe3e8;font-size:13px;width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px}
-.dpad button:active,.dpad button.pressed{background:rgba(255,255,255,.12)}
+.dpad .ring{position:absolute;inset:4px 8px;border-radius:50%;background:radial-gradient(circle at 50% 35%,#fbe6dd,#e3b2a4 55%,#c48a7b 85%);box-shadow:0 3px 0 #8f5a4f,0 4px 8px rgba(80,40,30,.4),inset 0 1px 0 rgba(255,255,255,.6)}
+.dpad button{position:absolute;appearance:none;border:0;background:transparent;cursor:pointer;color:#5b2f27;font-size:13px;width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px}
+.dpad button:active,.dpad button.pressed{background:rgba(120,60,50,.15)}
 .dpad .up{left:35px;top:6px}.dpad .down{left:35px;bottom:6px}.dpad .left{left:10px;top:31px}.dpad .right{right:10px;top:31px}
 .dpad .lbl2{position:absolute;font-size:8px;color:var(--l-2nd);left:0;right:0;text-align:center;top:-11px;letter-spacing:.04em}
 .hint{max-width:384px;margin:14px 16px 24px;font-size:12px;line-height:1.5;color:var(--muted);text-align:center}
