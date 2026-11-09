@@ -456,6 +456,7 @@ function parse(toks) {
       if (is('(')) { i++; const idx = pOr(); closeParen(); return { k: 'L', i: li, idx }; }
       return { k: 'L', i: li };
     }
+    if (v === 'rand' && L[i + 1] && L[i + 1].t === 'tok' && L[i + 1].v === '(') { i += 2; const args = [pOr()]; while (is(',')) { i++; args.push(pOr()); } closeParen(); return { k: 'f', name: 'rand(', args }; }
     if (CONSTS.has(v)) { i++; return { k: 'c', v }; }
     if (isVar(v)) { i++; return { k: 'v', v }; }
     if (isY(v)) {
@@ -654,14 +655,32 @@ function strFn(name, a) {
   return undefined;
 }
 // turn typed text back into tokens (used by expr( and keyboard paste)
-const TOKLIST = ['sin⁻¹(', 'cos⁻¹(', 'tan⁻¹(', 'sin(', 'cos(', 'tan(', 'log(', 'ln(', '√(', 'abs(', 'Ans', 'π', 'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7', 'Y8', 'Y9', 'Y0'];
+function catalogToks() {
+  return ['abs(', ' and ', 'binomcdf(', 'binompdf(', 'cos(', 'cos⁻¹(', 'cosh(', 'cosh⁻¹(', 'e^(', 'fMax(', 'fMin(', 'fnInt(', 'fPart(', 'gcd(', 'geometcdf(', 'geometpdf(', 'int(', 'invNorm(', 'iPart(', 'lcm(', 'ln(', 'log(', 'logBASE(', 'max(', 'min(', 'nCr', 'nDeriv(', 'normalcdf(', 'normalpdf(', 'not(', 'nPr', ' or ', 'poissoncdf(', 'poissonpdf(', 'rand', 'randInt(', 'remainder(', 'round(', 'sin(', 'sin⁻¹(', 'sinh(', 'sinh⁻¹(', 'tan(', 'tan⁻¹(', 'tanh(', 'tanh⁻¹(', ' xor ', '►Dec', '►Frac', 'Σ(',
+      'augment(', 'ClrList ', 'cumSum(', 'dim(', 'Fill(', 'mean(', 'median(', 'prod(', 'seq(', 'SortA(', 'SortD(', 'stdDev(', 'sum(', 'variance(', 'ΔList(',
+      '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', 'invT(', 'tpdf(', 'tcdf(', 'χ²pdf(', 'χ²cdf(', 'Fpdf(', 'Fcdf(', ...REGS,
+      'det(', 'identity(', 'randM(', 'rref(', 'ref(', 'rowSwap(', 'row+(', '*row(', '*row+(', 'Matr►list(', 'List►matr(', 'conj(', 'real(', 'imag(', 'angle(', '►Rect', '►Polar', '►DMS',
+      'R►Pr(', 'R►Pθ(', 'P►Rx(', 'P►Ry(', 'randNorm(', 'randBin(', 'sub(', 'length(', 'inString(', 'expr(', 'toString(', 'getKey', 'i',
+      ...DRAWCMDS, ...CTL.filter(t => t !== 'prgm'), ...IO.filter(t => t !== 'getKey'), 'tvm_Pmt', 'tvm_I%', 'tvm_PV', 'tvm_N', 'tvm_FV', 'npv(', 'irr(', '►Nom(', '►Eff('];
+}
+let TOKLIST = null;
+function tokList() {
+  if (TOKLIST) return TOKLIST;
+  const set = new Set([...catalogToks(), 'nCr', 'nPr', ' nCr ', ' nPr ', 'Ans', 'π', 'getKey', 'rand', '10^(', 'e^(', '√(', '³√(', 'ˣ√', '⁻¹', '►F◄►D', '►n/d◄►Un/d',
+    ...Object.keys(WINVARS), ...Object.keys(STATVARS), ...[1, 2, 3, 4, 5, 6].map(k => 'L' + k), ...YLAB.map(k => 'Y' + k), ...'ABCDEFGHIJ'.split('').map(k => '[' + k + ']'), ...'0123456789'.split('').map(k => 'Str' + k)]);
+  Object.values(KEYS).forEach(k => [k.p, k.s, k.a].forEach(a => { if (a && a.startsWith('i:') && a.length > 3) set.add(a.slice(2)); }));
+  TOKLIST = [...set].filter(t => t.length > 1).sort((a, b) => b.length - a.length);
+  return TOKLIST;
+}
 function strTokens(s) {
   const out = []; let i = 0;
   while (i < s.length) {
-    const m = TOKLIST.find(t => s.startsWith(t, i));
-    if (m) { out.push(m); i += m.length; continue; }
+    const m = tokList().find(t => s.startsWith(t, i) && !(/^[a-z]/.test(t) && t.length > 1 && /[A-Za-z]/.test(s[i + t.length] || '') && !t.endsWith('(')));
+    if (m) { out.push(m === 'nCr' ? ' nCr ' : m === 'nPr' ? ' nPr ' : m); i += m.length; continue; }
     let ch = s[i++];
-    if (ch === '-') ch = '−'; else if (ch === '*') ch = '×'; else if (ch === '/') ch = '÷';
+    const prev = out[out.length - 1];
+    if (ch === '-') ch = prev === undefined || /^[(,{\[+−×÷^=≠<>≤≥→]$/.test(prev) || isFn(prev) ? '⁻' : '−';
+    else if (ch === '*') ch = '×'; else if (ch === '/') ch = '÷';
     out.push(ch);
   }
   return out;
@@ -698,6 +717,7 @@ function pow(a, b) {
   return chk(Math.pow(a, isInt(b) && a < 0 ? Math.round(b) : b));
 }
 function fact(n) {
+  if (isInt(2 * n) && !isInt(n) && n >= -0.5) { if (n > 69) err('OVERFLOW'); return Math.exp(lnG(n + 1)); }
   if (n < 0 || !isInt(n)) err('DOMAIN');
   n = Math.round(n); if (n > 69) err('OVERFLOW');
   let r = 1; for (let k = 2; k <= n; k++) r *= k; return r;
@@ -706,6 +726,11 @@ function nPr(n, r) { if (n < 0 || r < 0 || !isInt(n) || !isInt(r)) err('DOMAIN')
 function nCr(n, r) { if (n < 0 || r < 0 || !isInt(n) || !isInt(r)) err('DOMAIN'); if (r > n) return 0; r = Math.min(r, n - r); let p = 1; for (let k = 1; k <= r; k++) p = p * (n - r + k) / k; return chk(Math.round(p) === p || p > 1e15 ? p : Math.round(p)); }
 function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a; }
 
+function r14(v, a, b) {
+  if (!Number.isFinite(v) || v === 0) return v;
+  if (a !== undefined && Math.abs(v) < 1e-13 * Math.max(Math.abs(a), Math.abs(b))) return 0;
+  return Number(v.toPrecision(14));
+}
 function binop(op, a, b) {
   if (typeof a === 'string' || typeof b === 'string') {
     if (typeof a !== 'string' || typeof b !== 'string') err('DATA TYPE');
@@ -717,10 +742,10 @@ function binop(op, a, b) {
   if (isMat(a) || isMat(b)) return matBin(op, a, b);
   if (isC(a) || isC(b)) return chk(cbin(op, a, b));
   switch (op) {
-    case '+': return chk(a + b);
-    case '−': return chk(a - b);
-    case '×': return chk(a * b);
-    case '÷': if (b === 0) err('DIVIDE BY 0'); return chk(a / b);
+    case '+': return chk(r14(a + b, a, b));
+    case '−': return chk(r14(a - b, a, b));
+    case '×': return chk(r14(a * b));
+    case '÷': if (b === 0) err('DIVIDE BY 0'); return chk(r14(a / b));
     case '^': return pow(a, b);
     case 'ˣ√': if (a === 0) err('DOMAIN'); return pow(b, 1 / a);
     case ' nPr ': return nPr(a, b);
@@ -857,19 +882,22 @@ function gammaQ(a, x) { if (x <= 0) return 1; return x < a + 1 ? 1 - gammaP(a, x
 const dfOk = df => { if (!(df > 0)) err('DOMAIN'); return df; };
 function tTail(t, df) { if (t < 0) return 1 - tTail(-t, df); if (t === Infinity) return 0; return 0.5 * ibeta(df / (df + t * t), df / 2, 0.5); }
 function tpdf(x, df) { dfOk(df); return Math.exp(lnG((df + 1) / 2) - lnG(df / 2) - (df + 1) / 2 * Math.log(1 + x * x / df)) / Math.sqrt(df * Math.PI); }
+// P(0 < T < t), accurate for small t
+const tHalf = (t, df) => t === Infinity ? 0.5 : 0.5 * ibeta(t * t / (df + t * t), 0.5, df / 2);
 function tcdf(lo, hi, df) {
   dfOk(df);
-  if (lo >= 0) return tTail(lo, df) - tTail(hi, df);
-  if (hi <= 0) return tTail(-hi, df) - tTail(-lo, df);
-  return 1 - tTail(-lo, df) - tTail(hi, df);
+  if (lo >= 0) return Math.abs(lo) < 1 ? tHalf(hi, df) - tHalf(lo, df) : tTail(lo, df) - tTail(hi, df);
+  if (hi <= 0) return Math.abs(hi) < 1 ? tHalf(-lo, df) - tHalf(-hi, df) : tTail(-hi, df) - tTail(-lo, df);
+  return tHalf(-lo, df) + tHalf(hi, df);
 }
 function invT(p, df) {
   dfOk(df); if (!(p > 0 && p < 1)) err('DOMAIN');
-  const Ft = t => t < 0 ? tTail(-t, df) : 1 - tTail(t, df);
+  const Ft = t => Math.abs(t) < 1 ? 0.5 + Math.sign(t) * tHalf(Math.abs(t), df) : t < 0 ? tTail(-t, df) : 1 - tTail(t, df);
+  if (Math.abs(p - 0.5) < 1e-15) return 0;
   let lo = -1, hi = 1;
   while (Ft(lo) > p && lo > -1e15) lo *= 2;
   while (Ft(hi) < p && hi < 1e15) hi *= 2;
-  for (let k = 0; k < 300 && hi - lo > 1e-15 * Math.max(1, Math.abs(lo)); k++) { const m = (lo + hi) / 2; if (Ft(m) < p) lo = m; else hi = m; }
+  for (let k = 0; k < 400 && hi - lo > 1e-15 * Math.max(1e-300, Math.abs(lo), Math.abs(hi)); k++) { const m = (lo + hi) / 2; if (Ft(m) < p) lo = m; else hi = m; }
   return (lo + hi) / 2;
 }
 function chipdf(x, df) { dfOk(df); if (x <= 0) return x === 0 && df === 2 ? 0.5 : 0; return Math.exp((df / 2 - 1) * Math.log(x) - x / 2 - (df / 2) * Math.LN2 - lnG(df / 2)); }
@@ -1001,7 +1029,12 @@ const sortNum = a => a.slice().sort((p, q) => p - q);
 function medianSorted(a) { const n = a.length, m = Math.floor(n / 2); return n % 2 ? a[m] : (a[m - 1] + a[m]) / 2; }
 function sampleVar(d) { if (d.length < 2) err('DOMAIN'); const m = sumOf(d) / d.length; return sumOf(d.map(x => (x - m) * (x - m))) / (d.length - 1); }
 function listFn(name, a) {
+  const many = (n, f) => { if (!isInt(n) || n < 1 || n > 999) err('DOMAIN'); return Array.from({ length: Math.round(n) }, f); };
   switch (name) {
+    case 'rand(': need(a, 1); return many(num(a[0]), () => Math.random());
+    case 'randInt(': if (a.length === 3) return many(num(a[2]), () => scalarFn('randInt(', [a[0], a[1]])); return undefined;
+    case 'randNorm(': if (a.length === 3) return many(num(a[2]), () => scalarFn('randNorm(', [a[0], a[1]])); return undefined;
+    case 'randBin(': if (a.length === 3) return many(num(a[2]), () => scalarFn('randBin(', [a[0], a[1]])); return undefined;
     case 'sum(': { need(a, 1, 3); const l = listArg(a[0]); const s = a[1] ?? 1, e = a[2] ?? l.length; if (!isInt(s) || !isInt(e) || s < 1 || e > l.length) err('INVALID DIM'); return sumOf(l.slice(s - 1, e)); }
     case 'prod(': need(a, 1); return chk(listArg(a[0]).reduce((p, q) => p * q, 1));
     case 'mean(': { need(a, 1, 2); const d = withFreq(listArg(a[0]), a[1]); return sumOf(d) / d.length; }
@@ -1047,7 +1080,7 @@ function scalarFn(name, a) {
     case '√(': one(); if (x < 0) err('NONREAL ANS'); return Math.sqrt(x);
     case '³√(': one(); return Math.cbrt(x);
     case 'abs(': one(); return Math.abs(x);
-    case 'round(': { need(a, 1, 2); const d = a.length > 1 ? a[1] : 9; if (!isInt(d) || d < 0 || d > 9) err('DOMAIN'); const p = Math.pow(10, Math.round(d)); return Math.sign(x) * Math.round(Math.abs(x) * p + 1e-9) / p; }
+    case 'round(': { need(a, 1, 2); const d = a.length > 1 ? a[1] : 9; if (!isInt(d) || d < 0 || d > 9) err('DOMAIN'); const p = Math.pow(10, Math.round(d)); return Math.sign(x) * Math.round(Number((Math.abs(x) * p).toPrecision(14))) / p; }
     case 'iPart(': one(); return Math.trunc(x);
     case 'fPart(': one(); return x - Math.trunc(x);
     case 'int(': one(); return Math.floor(x + (isInt(x) ? 1e-12 : 0));
@@ -1177,6 +1210,7 @@ function evalTokens(t) { return num(evalAny(t)); }
 
 const STORABLE = new Set([...LETTERS, ...Object.keys(WINVARS)]);
 function setVar(name, v) {
+  S.graphDirty = true;
   if (name in WINVARS) { S.win[WINVARS[name]] = v; S.graphDirty = true; }
   else S.vars[name] = v;
 }
@@ -1203,6 +1237,7 @@ function parseStoreTarget(rest) {
   err('SYNTAX');
 }
 function doStore(s, v) {
+  S.graphDirty = true;
   if (s.name) { setVar(s.name, s.name in WINVARS ? num(v) : numC(v)); return; }
   if (s.str !== undefined) { if (typeof v !== 'string') err('DATA TYPE'); S.strs[s.str] = v; return; }
   if (s.mat) {
@@ -1224,7 +1259,14 @@ function doStore(s, v) {
   if (v.length > 999) err('INVALID DIM');
   S.lists[s.list] = v.slice();
 }
+function splitColons(toks) {
+  const parts = []; let cur = [], str = false;
+  for (const t of toks) { if (t === '"') str = !str; if (t === ':' && !str) { parts.push(cur); cur = []; continue; } cur.push(t); }
+  parts.push(cur);
+  return parts.filter(p => p.length);
+}
 function runLine(toks) {
+  if (toks.includes(':')) { const parts = splitColons(toks); if (parts.length > 1) { let r; for (const part of parts) r = runLine(part); return r; } }
   const joined = toks.join('');
   if (joined.startsWith('prgm') && S.screen !== 'prun' && !(S.run && S.run.active)) { const name = joined.slice(4); if (!S.progs[name]) err('UNDEFINED'); startProgram(name); return { prog: true }; }
   if (COMMANDS.has(toks[0])) return runCommand(toks[0], toks.slice(1));
@@ -1261,10 +1303,13 @@ const REGS = ['LinReg(ax+b) ', 'QuadReg ', 'CubicReg ', 'QuartReg ', 'LinReg(a+b
 const DRAWCMDS = ['StorePic ', 'RecallPic ', 'StoreGDB ', 'RecallGDB ', 'ClrDraw', 'Line(', 'Horizontal ', 'Vertical ', 'Tangent(', 'DrawF ', 'Shade(', 'DrawInv ', 'Circle(', 'Text(', 'Pt-On(', 'Pt-Off(', 'Pt-Change(', 'Pxl-On(', 'Pxl-Off(', 'Pxl-Change('];
 const COMMANDS = new Set([...DRAWCMDS, 'Matr►list(', 'List►matr(', 'SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
 function splitArgs(t) {
-  const out = []; let cur = [], d = 0;
+  const out = []; let cur = [], d = 0, str = false;
   for (const x of t) {
-    if (x === ',' && d === 0) { out.push(cur); cur = []; continue; }
-    if (x === '(' || x === '{' || isFn(x)) d++; else if (x === ')' || x === '}') d--;
+    if (x === '"') str = !str;
+    if (!str) {
+      if (x === ',' && d === 0) { out.push(cur); cur = []; continue; }
+      if (x === '(' || x === '{' || x === '[' || isFn(x)) d++; else if (x === ')' || x === '}' || x === ']') d--;
+    }
     cur.push(x);
   }
   if (cur.length || out.length) out.push(cur);
@@ -1650,7 +1695,10 @@ function medMed(xs, ys, f) {
   const [[x1, y1], [x2, y2], [x3, y3]] = grp;
   if (x3 === x1) err('STAT');
   const a = (y3 - y1) / (x3 - x1), b0 = y1 - a * x1, b = (2 * b0 + (y2 - a * x2)) / 3;
-  return { title: 'Med-Med', lines: ['y=ax+b', 'a=' + SF(a), 'b=' + SF(b)], eq: [...numTokens(a), 'X', '+', ...numTokens(b)] };
+  const eq = [...numTokens(a), 'X', '+', ...numTokens(b)];
+  ['a', 'b', 'c', 'd', 'e ', 'r', 'r²', 'R²'].forEach(k => delete S.statVars[k]);
+  S.statVars.a = a; S.statVars.b = b; S.regEQ = eq;
+  return { title: 'Med-Med', lines: ['y=ax+b', 'a=' + SF(a), 'b=' + SF(b)], eq };
 }
 
 function runCommand(cmd, rest) {
@@ -2208,7 +2256,12 @@ const pxToX = px => S.win.xmin + px * (S.win.xmax - S.win.xmin) / (GW - 1);
 const xToPx = x => (x - S.win.xmin) / (S.win.xmax - S.win.xmin) * (GW - 1);
 const yToPy = y => SB + (S.win.ymax - y) / (S.win.ymax - S.win.ymin) * (GH - 1);
 const pyToY = py => S.win.ymax - (py - SB) * (S.win.ymax - S.win.ymin) / (GH - 1);
-const dX = () => (S.win.xmax - S.win.xmin) / (GW - 1);
+// the CE graph is 265×165 pixels: trace and the free cursor step on that grid
+const TIW = 264, TIH = 164;
+const dX = () => (S.win.xmax - S.win.xmin) / TIW;
+const dY = () => (S.win.ymax - S.win.ymin) / TIH;
+function freeSync(g) { g.cx = g.kx * (GW - 1) / TIW; g.cy = SB + g.ky * (GH - 1) / TIH; }
+function freeHome(g) { g.kx = TIW / 2; g.ky = TIH / 2; freeSync(g); }
 const clampPy = p => Math.max(-2000, Math.min(2000, p));
 
 function activeFns() { return S.Y.map((y, i) => i).filter(i => S.Y[i].on && S.Y[i].ed.t.length && (() => { try { yAst(i); return true; } catch (e) { return false; } })()); }
@@ -2352,7 +2405,7 @@ function drawGraph() {
       ctx.strokeStyle = '#111'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x - 5, y + 0.5); ctx.lineTo(x + 6, y + 0.5); ctx.moveTo(x + 0.5, y - 5); ctx.lineTo(x + 0.5, y + 6); ctx.stroke();
     }
-    if (S.fmt.coord === 0) lines.push([{ t: 'X=' + fmtNum(pxToX(x), 7) }, { t: 'Y=' + fmtNum(pyToY(y), 7), at: 160 }]);
+    if (S.fmt.coord === 0) lines.push([{ t: 'X=' + fmtNum(r14(S.win.xmin + g.kx * dX()), 7) }, { t: 'Y=' + fmtNum(r14(S.win.ymax - g.ky * dY()), 7), at: 160 }]);
   } else if (g.mode === 'trace' && g.trace && g.trace.p !== undefined) {
     const cv = curves().find(q => q.i === g.trace.fi);
     if (cv) {
@@ -2975,6 +3028,13 @@ function endProgram() {
   if (S.screen === 'prun' || S.screen === 'menu') { S.screen = 'prun'; S.prun.done = true; prunLine('Done', true); }
 }
 function evalStmt(t) { return evalAny(t); }
+// value + display text for Disp/Pause/Output, honouring ►Frac, ►Dec, ►DMS, ►Rect, ►Polar
+function dispText(t) {
+  const last = t[t.length - 1];
+  const conv = { '►Frac': [true, null], '►Dec': [false, null], '►DMS': [false, 'dms'], '►Rect': [false, 'rect'], '►Polar': [false, 'polar'], '►F◄►D': [true, null] }[last];
+  const v = evalAny(conv ? t.slice(0, -1) : t);
+  return { v, text: showVal(v, conv ? conv[0] : false, conv ? conv[1] : null) };
+}
 function step() {
   const R = S.run, fr = R.frames[R.frames.length - 1];
   if (fr.pc >= fr.st.length) { R.frames.pop(); if (!R.frames.length) endProgram(); return; }
@@ -3024,12 +3084,12 @@ function step() {
     case 'Stop': R.frames.length = 0; endProgram(); return;
     case 'Return': R.frames.pop(); if (!R.frames.length) endProgram(); return;
     case 'Pause ': {
-      if (rest.length) { const v = evalStmt(rest); prunLine(showVal(v), typeof v !== 'string'); }
+      if (rest.length) { const d = dispText(rest); prunLine(d.text, typeof d.v !== 'string'); }
       S.prun.pause = true; fr.pc++; return;
     }
     case 'Disp ': {
       if (!rest.length) { fr.pc++; return; }
-      for (const a of args()) { const v = evalStmt(a); String(showVal(v)).split('\n').forEach(l => prunLine(l, typeof v !== 'string')); }
+      for (const a of args()) { const d = dispText(a); String(d.text).split('\n').forEach(l => prunLine(l, typeof d.v !== 'string')); }
       if (S.screen !== 'prun') S.screen = 'prun';
       fr.pc++; return;
     }
@@ -3037,7 +3097,7 @@ function step() {
       const a = args(); if (a.length !== 3) err('ARGUMENT');
       const r = num(evalStmt(a[0])), c = num(evalStmt(a[1]));
       if (!isInt(r) || !isInt(c) || r < 1 || r > ROWS || c < 1 || c > COLS) err('DOMAIN');
-      prunWrite(r - 1, c - 1, showVal(evalStmt(a[2])));
+      prunWrite(r - 1, c - 1, dispText(a[2]).text);
       S.screen = 'prun'; fr.pc++; return;
     }
     case 'ClrHome': S.prun.grid = Array.from({ length: ROWS }, () => ' '.repeat(COLS)); S.prun.row = 0; fr.pc++; return;
@@ -3099,6 +3159,7 @@ function submitInput() {
     if (!(e instanceof CalcError)) throw e;
     S.run.active = false; showError(e.type, null); return;
   }
+  prunWrite(I.row, I.col, I.ed.str());
   P.row = I.row + 1; P.input = null;
   nextInput();
   if (!P.input) setTimeout(runSteps, 0);
@@ -3287,7 +3348,31 @@ function polyRoots(co) {
     });
     if (delta < 1e-15) break;
   }
-  return z.map(r => { const re = Math.abs(r.re) < 1e-11 ? 0 : r.re, im = Math.abs(r.im) < 1e-9 * Math.max(1, Math.abs(r.re)) ? 0 : r.im; return im === 0 ? re : new C(re, im); })
+  // multiple roots converge slowly; average each cluster (the mean of a cluster is accurate)
+  const used = Array(n).fill(false), out = [];
+  const scale = Math.max(1, ...z.map(q => Math.hypot(q.re, q.im)));
+  for (let i = 0; i < n; i++) {
+    if (used[i]) continue;
+    const grp = [i];
+    for (let g2 = 0; g2 < grp.length; g2++) for (let j = i + 1; j < n; j++) if (!used[j] && !grp.includes(j) && Math.hypot(z[grp[g2]].re - z[j].re, z[grp[g2]].im - z[j].im) < 8e-3 * scale) grp.push(j);
+    grp.forEach(j => { used[j] = true; });
+    let m = new C(grp.reduce((s2, j) => s2 + z[j].re, 0) / grp.length, grp.reduce((s2, j) => s2 + z[j].im, 0) / grp.length);
+    if (grp.length > 1) {
+      // a root of multiplicity k is a simple root of the (k-1)th derivative: polish it there
+      let d = a.slice();
+      for (let r = 1; r < grp.length; r++) { const deg = d.length - 1; d = d.slice(0, -1).map((c, j) => c * (deg - j)); }
+      const dd = d.slice(0, -1).map((c, j) => c * (d.length - 1 - j));
+      const ev2 = (co2, x) => co2.reduce((acc, c) => { const t2 = cmulC(acc, x); return new C(t2.re + c, t2.im); }, new C(0, 0));
+      for (let it = 0; it < 50; it++) {
+        const f1 = ev2(d, m), f2 = ev2(dd, m);
+        if (f2.re === 0 && f2.im === 0) break;
+        const q = toC(cdiv(f1, f2)); m = new C(m.re - q.re, m.im - q.im);
+        if (Math.hypot(q.re, q.im) < 1e-16 * Math.max(1, Math.hypot(m.re, m.im))) break;
+      }
+    }
+    grp.forEach(() => out.push(m));
+  }
+  return out.map(r => { const re = Math.abs(r.re) < 1e-11 * scale ? 0 : Number(r.re.toPrecision(13)), im = Math.abs(r.im) < 1e-8 * Math.max(1, Math.abs(r.re)) ? 0 : Number(r.im.toPrecision(13)); return im === 0 ? re : new C(re, im); })
     .sort((p, q) => (typeof p === 'number' ? p : p.re) - (typeof q === 'number' ? q : q.re));
 }
 function cpowRaw(z, k) { let r = new C(1, 0); for (let j = 0; j < k; j++) r = cmulC(r, z); return r; }
@@ -3315,7 +3400,8 @@ function openSimult() {
 /* =================================================================
    Screen openers
    ================================================================= */
-function goHome() { closeGraphState(); S.screen = 'home'; }
+function stopProgram() { if (S.run && S.run.active) { S.run.active = false; if (S.prun) { S.prun.input = null; S.prun.pause = null; S.prun.menu = null; } } }
+function goHome() { closeGraphState(); if (S.prun && S.prun.menu) stopProgram(); S.screen = 'home'; }
 function closeGraphState() { const g = S.g; g.mode = 'none'; g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; }
 function showError(type, gotoFn) { S.err = { type, sel: 0, gotoFn, canGoto: !!gotoFn }; S.screen = 'error'; }
 
@@ -3424,32 +3510,36 @@ function openMenu(def) {
   else if (S.screen === 'pedit') ret = 'pedit';
   else if (S.screen === 'ledit') { if (!S.ledit.ed) S.ledit.ed = new Ed([]); ret = 'ledit'; }
   else if (S.screen === 'medit') { if (!S.medit.ed) S.medit.ed = new Ed([]); ret = 'medit'; }
+  else if (S.screen === 'solver' && (S.solver.stage === 0 || solverRows()[S.solver.sel] !== 'bound')) { if (S.solver.stage === 1 && !S.solver.ed) S.solver.ed = new Ed([]); ret = 'solver'; }
+  else if (S.screen === 'appform' && afRows()[S.af.sel] && !afRows()[S.af.sel].opts && !afRows()[S.af.sel].act) { if (!S.af.ed) S.af.ed = new Ed([]); ret = 'appform'; }
+  else if (S.screen === 'test' && S.test.ed) ret = 'test';
   else ret = editorFor(S.screen) ? S.screen : (def.keepScreen ? S.screen : 'home');
   if (S.screen === 'ledit' && def.home && !leditCommit()) return;
-  if (S.screen === 'graph' && !def.keepScreen) closeGraphState();
+  if (S.screen === 'graph' && !def.keepScreen && !S.g.prompt) closeGraphState();
   S.menu = { def, tab: 0, sel: 0, scroll: 0, ret };
   S.screen = 'menu';
 }
 function menuInsert(tok) { return () => { S.screen = S.menu.ret; insertTok(tok); }; }
 
 function checkWindow() { const w = S.win; if (!(w.xmin < w.xmax) || !(w.ymin < w.ymax)) { showError('WINDOW RANGE', () => openForm('window')); return false; } return true; }
-function openGraph() { if (!checkWindow() || !checkPlots()) return; S.screen = 'graph'; }
+function openGraph() { if (!checkWindow() || !checkPlots()) return; S.graphDirty = true; S.screen = 'graph'; }
 function openTrace(x) {
   if (!checkWindow() || !checkPlots()) return;
+  S.graphDirty = true;
   const fns = activeFns(); S.screen = 'graph'; const g = S.g;
   g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; g.shade = null;
   if (GM() !== 0) {
     const cvs = curves();
-    if (!cvs.length) { g.mode = 'free'; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); return; }
+    if (!cvs.length) { g.mode = 'free'; freeHome(g); return; }
     const keep = g.trace && g.trace.p !== undefined && cvs.some(q => q.i === g.trace.fi);
     g.mode = 'trace'; g.trace = { fi: keep ? g.trace.fi : cvs[0].i, p: paramRange()[0] };
     return;
   }
   if (g.trace && g.trace.p !== undefined) g.trace = null;
-  if (!fns.length) { g.mode = 'free'; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); return; }
+  if (!fns.length) { g.mode = 'free'; freeHome(g); return; }
   const fi = g.trace && fns.includes(g.trace.fi) ? g.trace.fi : fns[0];
   g.mode = 'trace';
-  g.trace = { fi, x: x !== undefined ? x : pxToX(Math.round((GW - 1) / 2)) };
+  g.trace = { fi, x: x !== undefined ? x : r14(S.win.xmin + (TIW / 2) * dX()) };
 }
 function openTable() { closeGraphState(); S.table.ed = null; S.screen = 'table'; }
 
@@ -3478,7 +3568,7 @@ function zoom(type) {
     case 'prev': if (S.prevWin) { const p = S.prevWin; S.prevWin = { ...S.win }; Object.assign(S.win, p); S.graphDirty = true; } break;
     case 'in': case 'out': case 'box': {
       openGraph(); if (S.screen !== 'graph') return;
-      const g = S.g; g.mode = 'free'; g.zoom = { type, p1: null }; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); g.trace = null;
+      const g = S.g; g.mode = 'free'; g.zoom = { type, p1: null }; freeHome(g); g.trace = null;
       return;
     }
   }
@@ -3496,7 +3586,7 @@ function zoomEnter() {
   const f = z.type === 'in' ? 1 / 4 : 4;
   const hx = (w.xmax - w.xmin) * f / 2, hy = (w.ymax - w.ymin) * f / 2;
   setWin({ xmin: X - hx, xmax: X + hx, ymin: Y - hy, ymax: Y + hy });
-  g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2);
+  freeHome(g);
 }
 
 /* ---- CALC ---- */
@@ -3534,7 +3624,7 @@ function startCalc(type) {
   g.calc = { type, step: 0, vals: [], prompt() { return CALC[this.type].steps[this.step] || ''; } };
   if (type === 'value') openPrompt();
 }
-function openPrompt() { const ed = new Ed([]); S.g.prompt = { ed, label: 'X=' }; }
+function openPrompt() { const ed = new Ed([]); S.g.prompt = { ed, label: PARAM() + '=' }; }
 function calcConfirm() {
   const g = S.g, c = g.calc, x = g.trace.x, fi = g.trace.fi;
   const f = t => evalY(fi, t);
@@ -3650,7 +3740,7 @@ const MENUS = {
   ]) }),
   LIST: () => ({ tabs: mkTabs([
     { title: 'NAMES', items: ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'].map(l => T(l)) },
-    { title: 'OPS', items: [T('SortA('), T('SortD('), T('dim('), T('Fill('), T('seq('), T('cumSum('), T('ΔList('), T('augment(')] },
+    { title: 'OPS', items: [T('SortA('), T('SortD('), T('dim('), T('Fill('), T('seq('), T('cumSum('), T('ΔList('), { label: 'Select(', dim: true, act: () => { goHome(); toast('Select( is not available in this web version'); } }, T('augment('), T('List►matr('), T('Matr►list(')] },
     { title: 'MATH', items: [T('min('), T('max('), T('mean('), T('median('), T('sum('), T('prod('), T('stdDev('), T('variance(')] },
   ]) }),
   STATPLOT: () => ({ tabs: mkTabs([{ title: 'STAT PLOTS', items: [
@@ -3699,12 +3789,7 @@ const MENUS = {
     { label: 'Reset Defaults', act: () => { resetAll(); goHome(); toast('Defaults Set'); } },
   ] }]) }),
   CATALOG: () => {
-    const toks = ['abs(', ' and ', 'binomcdf(', 'binompdf(', 'cos(', 'cos⁻¹(', 'cosh(', 'cosh⁻¹(', 'e^(', 'fMax(', 'fMin(', 'fnInt(', 'fPart(', 'gcd(', 'geometcdf(', 'geometpdf(', 'int(', 'invNorm(', 'iPart(', 'lcm(', 'ln(', 'log(', 'logBASE(', 'max(', 'min(', 'nCr', 'nDeriv(', 'normalcdf(', 'normalpdf(', 'not(', 'nPr', ' or ', 'poissoncdf(', 'poissonpdf(', 'rand', 'randInt(', 'remainder(', 'round(', 'sin(', 'sin⁻¹(', 'sinh(', 'sinh⁻¹(', 'tan(', 'tan⁻¹(', 'tanh(', 'tanh⁻¹(', ' xor ', '►Dec', '►Frac', 'Σ(',
-      'augment(', 'ClrList ', 'cumSum(', 'dim(', 'Fill(', 'mean(', 'median(', 'prod(', 'seq(', 'SortA(', 'SortD(', 'stdDev(', 'sum(', 'variance(', 'ΔList(',
-      '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', 'invT(', 'tpdf(', 'tcdf(', 'χ²pdf(', 'χ²cdf(', 'Fpdf(', 'Fcdf(', ...REGS,
-      'det(', 'identity(', 'randM(', 'rref(', 'ref(', 'rowSwap(', 'row+(', '*row(', '*row+(', 'Matr►list(', 'List►matr(', 'conj(', 'real(', 'imag(', 'angle(', '►Rect', '►Polar', '►DMS',
-      'R►Pr(', 'R►Pθ(', 'P►Rx(', 'P►Ry(', 'randNorm(', 'randBin(', 'sub(', 'length(', 'inString(', 'expr(', 'toString(', 'getKey', 'i',
-      ...DRAWCMDS, ...CTL.filter(t => t !== 'prgm'), ...IO.filter(t => t !== 'getKey'), 'tvm_Pmt', 'tvm_I%', 'tvm_PV', 'tvm_N', 'tvm_FV', 'npv(', 'irr(', '►Nom(', '►Eff('];
+    const toks = catalogToks();
     const items = toks.map(t => { const tok = t === 'nCr' || t === 'nPr' ? ' ' + t + ' ' : t; return { label: t.trim(), act: menuInsert(tok) }; });
     const key = l => /^[A-Za-z]/.test(l) ? l : '~' + l;
     items.sort((a, b) => key(a.label).localeCompare(key(b.label), 'en', { sensitivity: 'base' }));
@@ -3746,6 +3831,11 @@ function editorFor(screen) {
 }
 const TPL_FOR = { '^': 'sup', '√(': 'sqrt', 'e^(': 'exp', '10^(': 'ten', 'abs(': 'abs', 'logBASE(': 'logb', 'ˣ√': 'root', 'Σ(': 'sum', 'nDeriv(': 'der', 'fnInt(': 'int', 'n/d': 'fr', 'Un/d': 'mix' };
 function insertTok(tok) {
+  if (S.rcl) {
+    S.rcl = false;
+    const tk = rclTokens(tok);
+    if (tk) { const was = S.insMode; S.insMode = true; tk.forEach(insertTok); S.insMode = was; return; }
+  }
   if (S.screen === 'graph' && !S.g.prompt) {
     if (S.g.mode === 'trace' && /^[0-9.⁻π]$|^e$|^Ans$/.test(tok)) openPrompt();
     else { goHome(); }
@@ -3944,13 +4034,13 @@ const HANDLERS = {
       return false;
     }
     const arrows = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
-    if (g.mode === 'none' && arrows.includes(a)) { g.mode = 'free'; g.cx = Math.round(GW / 2); g.cy = Math.round(SB + GH / 2); return true; }
+    if (g.mode === 'none' && arrows.includes(a)) { g.mode = 'free'; freeHome(g); return true; }
     if (g.mode === 'free') {
       switch (a) {
-        case 'UP': g.cy = Math.max(SB, g.cy - 1); return true;
-        case 'DOWN': g.cy = Math.min(GB - 1, g.cy + 1); return true;
-        case 'LEFT': g.cx = Math.max(0, g.cx - 1); return true;
-        case 'RIGHT': g.cx = Math.min(GW - 1, g.cx + 1); return true;
+        case 'UP': g.ky = Math.max(0, g.ky - 1); freeSync(g); return true;
+        case 'DOWN': g.ky = Math.min(TIH, g.ky + 1); freeSync(g); return true;
+        case 'LEFT': g.kx = Math.max(0, g.kx - 1); freeSync(g); return true;
+        case 'RIGHT': g.kx = Math.min(TIW, g.kx + 1); freeSync(g); return true;
         case 'ENTER': if (g.zoom) zoomEnter(); return true;
         case 'CLEAR': case 'BS': if (g.zoom) { g.zoom = null; } g.mode = 'none'; return true;
       }
@@ -3975,13 +4065,14 @@ const HANDLERS = {
       switch (a) {
         case 'LEFT': case 'RIGHT': {
           g.result = null; g.info = null; if (!g.calc) g.shade = null;
-          const dx = dX(); let px = Math.round(xToPx(t.x)) + (a === 'LEFT' ? -1 : 1);
-          if (px < 0 || px > GW - 1) {
-            const sh = (S.win.xmax - S.win.xmin) / 4 * (px < 0 ? -1 : 1);
+          const dx = dX(), step = 2 * dx;
+          let x = t.x + (a === 'LEFT' ? -step : step);
+          if (x < S.win.xmin - dx / 2 || x > S.win.xmax + dx / 2) {
+            const sh = (S.win.xmax - S.win.xmin) / 4 * (x < S.win.xmin ? -1 : 1);
             S.win.xmin += sh; S.win.xmax += sh; S.graphDirty = true;
-            px = Math.round(xToPx(t.x + (a === 'LEFT' ? -dx : dx)));
           }
-          t.x = pxToX(px); return true;
+          const k = Math.round((x - S.win.xmin) / dx);
+          t.x = r14(S.win.xmin + k * dx); return true;
         }
         case 'UP': case 'DOWN': {
           if (g.calc && g.calc.type !== 'intersect' && g.calc.step > 0) return true;
@@ -4255,8 +4346,7 @@ function doAction(a) {
   S.blink = true;
   if (S.rcl) {
     if (a === 'CLEAR' || a === 'QUIT') { S.rcl = false; return; }
-    if (a.startsWith('i:')) { const tk = rclTokens(a.slice(2)); S.rcl = false; if (tk) { const was = S.insMode; S.insMode = true; tk.forEach(insertTok); S.insMode = was; return; } }
-    else if (!['MATRIX', 'LIST', 'VARS'].includes(a)) S.rcl = false;
+    if (!a.startsWith('i:') && !['MATRIX', 'LIST', 'VARS', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER'].includes(a) && S.screen !== 'menu') S.rcl = false;
   }
   if (a.startsWith('na:')) { toast(a.slice(3) + ' is not available in this web version'); return; }
   const h = HANDLERS[S.screen];
@@ -4356,6 +4446,7 @@ function press(id) {
   const k = KEYS[id]; if (!k) return;
   S.seqGen++; setArea();
   if (S.off) { if (id === 'on') { S.off = false; redraw(); } return; }
+  if (S.run && S.run.active && id !== 'on' && !S.prun.input && !S.prun.pause && !S.prun.menu) { S.run.lastKey = KEYCODE[id] || 0; return; }
   if (id === 'second') { S.second = !S.second; S.blink = true; redraw(); return; }
   if (id === 'alpha') {
     if (S.second) { S.second = false; S.alpha = true; S.alphaLock = true; }
@@ -4376,7 +4467,7 @@ function press(id) {
   const catalog = S.screen === 'menu' && S.menu.def.catalog;
   let act;
   if (S.second) { act = k.s; S.second = false; }
-  else if ((S.alpha || catalog) && !(S.alphaLock && id === 'enter')) { act = k.a ?? k.p; if (S.alpha && !S.alphaLock) S.alpha = false; }
+  else if ((S.alpha && !(S.alphaLock && id === 'enter')) || (catalog && k.a && k.a.startsWith('i:'))) { act = k.a ?? k.p; if (S.alpha && !S.alphaLock) S.alpha = false; }
   else act = k.p;
   try { doAction(act); }
   catch (e) { console.error(e); showError(e instanceof CalcError ? e.type : 'SYNTAX', null); }
