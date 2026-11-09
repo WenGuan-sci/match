@@ -475,6 +475,62 @@ function binompdf(n, p, x) {
   if (n <= 60) return nCr(n, x) * Math.pow(p, x) * Math.pow(1 - p, n - x);
   return Math.exp(lnG(n + 1) - lnG(x + 1) - lnG(n - x + 1) + x * Math.log(p) + (n - x) * Math.log(1 - p));
 }
+/* incomplete beta / gamma for t, χ² and F */
+function betacf(a, b, x) {
+  const FPMIN = 1e-300, qab = a + b, qap = a + 1, qam = a - 1;
+  let c = 1, d = 1 - qab * x / qap; if (Math.abs(d) < FPMIN) d = FPMIN; d = 1 / d; let h = d;
+  for (let m = 1; m <= 500; m++) {
+    const m2 = 2 * m;
+    let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN; c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN; d = 1 / d; h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN; c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN; d = 1 / d;
+    const del = d * c; h *= del; if (Math.abs(del - 1) < 3e-16) break;
+  }
+  return h;
+}
+function ibeta(x, a, b) {
+  if (x <= 0) return 0; if (x >= 1) return 1;
+  const bt = Math.exp(lnG(a + b) - lnG(a) - lnG(b) + a * Math.log(x) + b * Math.log(1 - x));
+  return x < (a + 1) / (a + b + 2) ? bt * betacf(a, b, x) / a : 1 - bt * betacf(b, a, 1 - x) / b;
+}
+function gammaQcf(a, x) {
+  const FPMIN = 1e-300; let b = x + 1 - a, c = 1 / FPMIN, d = 1 / b, h = d;
+  for (let i = 1; i < 1000; i++) { const an = -i * (i - a); b += 2; d = an * d + b; if (Math.abs(d) < FPMIN) d = FPMIN; c = b + an / c; if (Math.abs(c) < FPMIN) c = FPMIN; d = 1 / d; const del = d * c; h *= del; if (Math.abs(del - 1) < 1e-16) break; }
+  return Math.exp(-x + a * Math.log(x) - lnG(a)) * h;
+}
+function gammaP(a, x) {
+  if (x <= 0) return 0;
+  if (x < a + 1) { let ap = a, sum = 1 / a, del = sum; for (let n = 0; n < 2000; n++) { ap++; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-16) break; } return sum * Math.exp(-x + a * Math.log(x) - lnG(a)); }
+  return 1 - gammaQcf(a, x);
+}
+function gammaQ(a, x) { if (x <= 0) return 1; return x < a + 1 ? 1 - gammaP(a, x) : gammaQcf(a, x); }
+const dfOk = df => { if (!(df > 0)) err('DOMAIN'); return df; };
+function tTail(t, df) { if (t < 0) return 1 - tTail(-t, df); if (t === Infinity) return 0; return 0.5 * ibeta(df / (df + t * t), df / 2, 0.5); }
+function tpdf(x, df) { dfOk(df); return Math.exp(lnG((df + 1) / 2) - lnG(df / 2) - (df + 1) / 2 * Math.log(1 + x * x / df)) / Math.sqrt(df * Math.PI); }
+function tcdf(lo, hi, df) {
+  dfOk(df);
+  if (lo >= 0) return tTail(lo, df) - tTail(hi, df);
+  if (hi <= 0) return tTail(-hi, df) - tTail(-lo, df);
+  return 1 - tTail(-lo, df) - tTail(hi, df);
+}
+function invT(p, df) {
+  dfOk(df); if (!(p > 0 && p < 1)) err('DOMAIN');
+  const Ft = t => t < 0 ? tTail(-t, df) : 1 - tTail(t, df);
+  let lo = -1, hi = 1;
+  while (Ft(lo) > p && lo > -1e15) lo *= 2;
+  while (Ft(hi) < p && hi < 1e15) hi *= 2;
+  for (let k = 0; k < 300 && hi - lo > 1e-15 * Math.max(1, Math.abs(lo)); k++) { const m = (lo + hi) / 2; if (Ft(m) < p) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+function chipdf(x, df) { dfOk(df); if (x <= 0) return x === 0 && df === 2 ? 0.5 : 0; return Math.exp((df / 2 - 1) * Math.log(x) - x / 2 - (df / 2) * Math.LN2 - lnG(df / 2)); }
+const chiTail = (x, df) => gammaQ(df / 2, x / 2);
+function chicdf(lo, hi, df) { dfOk(df); return chiTail(Math.max(0, lo), df) - chiTail(Math.max(0, hi), df); }
+function fpdf(x, d1, d2) { dfOk(d1); dfOk(d2); if (x <= 0) return 0; return Math.exp(0.5 * (d1 * Math.log(d1 * x) + d2 * Math.log(d2) - (d1 + d2) * Math.log(d1 * x + d2)) - Math.log(x) - (lnG(d1 / 2) + lnG(d2 / 2) - lnG((d1 + d2) / 2))); }
+const fTail = (x, d1, d2) => x <= 0 ? 1 : ibeta(d2 / (d2 + d1 * x), d2 / 2, d1 / 2);
+const fLower = (x, d1, d2) => x <= 0 ? 0 : ibeta(d1 * x / (d1 * x + d2), d1 / 2, d2 / 2);
+function fcdf(lo, hi, d1, d2) { dfOk(d1); dfOk(d2); return fTail(Math.max(0, lo), d1, d2) - fTail(Math.max(0, hi), d1, d2); }
+
 function poissonpdf(mu, x) {
   if (mu <= 0 || !isInt(x)) err('DOMAIN');
   x = Math.round(x); if (x < 0) return 0;
@@ -648,6 +704,13 @@ function scalarFn(name, a) {
     case 'normalpdf(': { need(a, 1, 3); const mu = a[1] ?? 0, sg = a[2] ?? 1; if (sg <= 0) err('DOMAIN'); const z = (x - mu) / sg; return Math.exp(-z * z / 2) / (sg * Math.sqrt(2 * Math.PI)); }
     case 'normalcdf(': need(a, 2, 4); return normcdf(a[0], a[1], a[2] ?? 0, a[3] ?? 1);
     case 'invNorm(': need(a, 1, 3); return invNorm(a[0], a[1] ?? 0, a[2] ?? 1);
+    case 'tpdf(': need(a, 2); return tpdf(a[0], a[1]);
+    case 'tcdf(': need(a, 3); return tcdf(a[0], a[1], a[2]);
+    case 'invT(': need(a, 2); return invT(a[0], a[1]);
+    case 'χ²pdf(': need(a, 2); return chipdf(a[0], a[1]);
+    case 'χ²cdf(': need(a, 3); return chicdf(a[0], a[1], a[2]);
+    case 'Fpdf(': need(a, 3); return fpdf(a[0], a[1], a[2]);
+    case 'Fcdf(': need(a, 4); return fcdf(a[0], a[1], a[2], a[3]);
     case 'binompdf(': need(a, 3); return binompdf(a[0], a[1], a[2]);
     case 'binomcdf(': { need(a, 3); let s = 0; const k = Math.floor(a[2]); for (let i = 0; i <= Math.min(k, a[0]); i++) s += binompdf(a[0], a[1], i); return Math.min(1, s); }
     case 'poissonpdf(': need(a, 2); return poissonpdf(a[0], a[1]);
@@ -741,7 +804,7 @@ function runLine(toks) {
    STAT commands: sorting, 1/2-Var Stats, regressions
    ================================================================= */
 const REGS = ['LinReg(ax+b) ', 'QuadReg ', 'CubicReg ', 'QuartReg ', 'LinReg(a+bx) ', 'LnReg ', 'ExpReg ', 'PwrReg '];
-const COMMANDS = new Set(['SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', ...REGS]);
+const COMMANDS = new Set(['SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
 function splitArgs(t) {
   const out = []; let cur = [], d = 0;
   for (const x of t) {
@@ -858,6 +921,212 @@ function regress(cmd, xs, ys, f) {
   if (r !== undefined) lines.push('r=' + SF(r));
   return { title: name, lines, eq };
 }
+/* =================================================================
+   STAT TESTS
+   ================================================================= */
+const altSym = a => ['≠', '<', '>'][a];
+const pNorm = (z, alt) => alt === 0 ? 2 * Q(Math.abs(z)) : alt === 1 ? Q(-z) : Q(z);
+const pT = (t, df, alt) => alt === 0 ? 2 * tTail(Math.abs(t), df) : alt === 1 ? tTail(-t, df) : tTail(t, df);
+const posInt = n => { if (!isInt(n) || n < 1) err('DOMAIN'); return Math.round(n); };
+const cLevel = c => { if (c > 1 && c < 100) c /= 100; if (!(c > 0 && c < 1)) err('DOMAIN'); return c; };
+const ival = (lo, hi) => '(' + fmtNum(lo) + ',' + fmtNum(hi) + ')';
+function sampleStats(list, freq) {
+  const d = withFreq(listArg(list), freq), n = d.length, m = sumOf(d) / n;
+  return { n, m, sx: n > 1 ? Math.sqrt(sumOf(d.map(x => (x - m) ** 2)) / (n - 1)) : NaN };
+}
+function oneSample(g, sfx = '', needSx = false) {
+  if (g.opt('inpt') === 0) return { ...sampleStats(g.list('list' + sfx), g.freq('freq' + sfx)), data: true };
+  const m = g.num('xbar' + sfx), n = posInt(g.num('n' + sfx));
+  const sx = needSx ? g.num('sx' + sfx) : NaN;
+  if (needSx && !(sx > 0)) err('DOMAIN');
+  return { m, n, sx, data: false };
+}
+function twoT(a, b, pooled) {
+  if (!(a.sx > 0) || !(b.sx > 0)) err('DOMAIN');
+  const v1 = a.sx * a.sx / a.n, v2 = b.sx * b.sx / b.n;
+  if (pooled) {
+    const df = a.n + b.n - 2, sp = Math.sqrt(((a.n - 1) * a.sx * a.sx + (b.n - 1) * b.sx * b.sx) / df);
+    return { se: sp * Math.sqrt(1 / a.n + 1 / b.n), df, sp };
+  }
+  return { se: Math.sqrt(v1 + v2), df: (v1 + v2) ** 2 / (v1 * v1 / (a.n - 1) + v2 * v2 / (b.n - 1)) };
+}
+function linT(g) {
+  const [X, Y] = pairs(g.list('xl'), g.list('yl'), g.freq('freq'));
+  const n = X.length; if (n < 3) err('STAT');
+  const L = linFit(X, Y), mx = sumOf(X) / n;
+  const sse = sumOf(X.map((x, i) => (Y[i] - (L.int + L.slope * x)) ** 2));
+  const s = Math.sqrt(sse / (n - 2)), sxx = sumOf(X.map(x => (x - mx) ** 2));
+  const se = s / Math.sqrt(sxx);
+  return { ...L, n, s, se, df: n - 2, t: se === 0 ? Math.sign(L.slope) * Infinity : L.slope / se };
+}
+const T_ = (key, label, def) => ({ kind: 'txt', key, label, def });
+const O_ = (key, label, opts) => ({ kind: 'opt', key, label, opts });
+const Dd = f => ({ ...f, when: v => v.inpt === 0 });
+const Ss = f => ({ ...f, when: v => v.inpt === 1 });
+const INPT = O_('inpt', 'Inpt:', ['Data', 'Stats']);
+const ALT = { mu: ['≠μ₀', '<μ₀', '>μ₀'], mu2: ['≠μ2', '<μ2', '>μ2'], p: ['≠p₀', '<p₀', '>p₀'], p2: ['≠p2', '<p2', '>p2'], s2: ['≠σ2', '<σ2', '>σ2'], z: ['≠0', '<0', '>0'] };
+const one = (sx) => [Dd(T_('list', 'List:', 'L1')), Dd(T_('freq', 'Freq:', '1')), Ss(T_('xbar', 'x̄:', '0')), ...(sx ? [Ss(T_('sx', 'Sx:', '1'))] : []), Ss(T_('n', 'n:', '30'))];
+const two = (sx) => [Dd(T_('list1', 'List1:', 'L1')), Dd(T_('list2', 'List2:', 'L2')), Dd(T_('freq1', 'Freq1:', '1')), Dd(T_('freq2', 'Freq2:', '1')),
+  Ss(T_('xbar1', 'x̄1:', '0')), ...(sx ? [Ss(T_('sx1', 'Sx1:', '1'))] : []), Ss(T_('n1', 'n1:', '30')),
+  Ss(T_('xbar2', 'x̄2:', '0')), ...(sx ? [Ss(T_('sx2', 'Sx2:', '1'))] : []), Ss(T_('n2', 'n2:', '30'))];
+const both = g => {
+  if (g.opt('inpt') === 0) return [{ ...sampleStats(g.list('list1'), g.freq('freq1')), data: true }, { ...sampleStats(g.list('list2'), g.freq('freq2')), data: true }];
+  const k = s => ({ m: g.num('xbar' + s), n: posInt(g.num('n' + s)), sx: g.has('sx' + s) ? g.num('sx' + s) : NaN, data: false });
+  return [k('1'), k('2')];
+};
+const CL = T_('cl', 'C-Level:', '.95');
+const TESTS = [
+  { id: 'ztest', name: 'Z-Test', draw: true, fields: [INPT, T_('mu0', 'μ₀:', '0'), T_('sig', 'σ:', '1'), ...one(false), O_('alt', 'μ:', ALT.mu)],
+    run(g) {
+      const mu0 = g.num('mu0'), sig = g.num('sig'); if (!(sig > 0)) err('DOMAIN');
+      const s = oneSample(g), alt = g.opt('alt'), z = (s.m - mu0) / (sig / Math.sqrt(s.n)), p = pNorm(z, alt);
+      return { lines: ['μ' + altSym(alt) + fmtNum(mu0), 'z=' + SF(z), 'p=' + SF(p), 'x̄=' + SF(s.m), ...(s.data ? ['Sx=' + SF(s.sx)] : []), 'n=' + SF(s.n)], draw: { dist: 'z', stat: z, alt, p, label: 'z' } };
+    } },
+  { id: 'ttest', name: 'T-Test', draw: true, fields: [INPT, T_('mu0', 'μ₀:', '0'), ...one(true), O_('alt', 'μ:', ALT.mu)],
+    run(g) {
+      const mu0 = g.num('mu0'), s = oneSample(g, '', true), alt = g.opt('alt');
+      if (!(s.sx > 0) || s.n < 2) err('DOMAIN');
+      const df = s.n - 1, t = (s.m - mu0) / (s.sx / Math.sqrt(s.n)), p = pT(t, df, alt);
+      return { lines: ['μ' + altSym(alt) + fmtNum(mu0), 't=' + SF(t), 'p=' + SF(p), 'df=' + SF(df), 'x̄=' + SF(s.m), 'Sx=' + SF(s.sx), 'n=' + SF(s.n)], draw: { dist: 't', df, stat: t, alt, p, label: 't' } };
+    } },
+  { id: '2z', name: '2-SampZTest', draw: true, fields: [INPT, T_('sig1', 'σ1:', '1'), T_('sig2', 'σ2:', '1'), ...two(false), O_('alt', 'μ1:', ALT.mu2)],
+    run(g) {
+      const s1 = g.num('sig1'), s2 = g.num('sig2'); if (!(s1 > 0 && s2 > 0)) err('DOMAIN');
+      const [a, b] = both(g), alt = g.opt('alt');
+      const z = (a.m - b.m) / Math.sqrt(s1 * s1 / a.n + s2 * s2 / b.n), p = pNorm(z, alt);
+      return { lines: ['μ1' + altSym(alt) + 'μ2', 'z=' + SF(z), 'p=' + SF(p), 'x̄1=' + SF(a.m), 'x̄2=' + SF(b.m), ...(a.data ? ['Sx1=' + SF(a.sx), 'Sx2=' + SF(b.sx)] : []), 'n1=' + SF(a.n), 'n2=' + SF(b.n)], draw: { dist: 'z', stat: z, alt, p, label: 'z' } };
+    } },
+  { id: '2t', name: '2-SampTTest', draw: true, fields: [INPT, ...two(true), O_('alt', 'μ1:', ALT.mu2), O_('pool', 'Pooled:', ['No', 'Yes'])],
+    run(g) {
+      const [a, b] = both(g), alt = g.opt('alt'), pooled = g.opt('pool') === 1;
+      const r = twoT(a, b, pooled), t = (a.m - b.m) / r.se, p = pT(t, r.df, alt);
+      return { lines: ['μ1' + altSym(alt) + 'μ2', 't=' + SF(t), 'p=' + SF(p), 'df=' + SF(r.df), 'x̄1=' + SF(a.m), 'x̄2=' + SF(b.m), 'Sx1=' + SF(a.sx), 'Sx2=' + SF(b.sx), ...(pooled ? ['Sxp=' + SF(r.sp)] : []), 'n1=' + SF(a.n), 'n2=' + SF(b.n)], draw: { dist: 't', df: r.df, stat: t, alt, p, label: 't' } };
+    } },
+  { id: '1p', name: '1-PropZTest', draw: true, fields: [T_('p0', 'p₀:', '.5'), T_('x', 'x:', '0'), T_('n', 'n:', '1'), O_('alt', 'prop:', ALT.p)],
+    run(g) {
+      const p0 = g.num('p0'), x = g.num('x'), n = posInt(g.num('n')), alt = g.opt('alt');
+      if (!(p0 > 0 && p0 < 1) || !isInt(x) || x < 0 || x > n) err('DOMAIN');
+      const ph = x / n, z = (ph - p0) / Math.sqrt(p0 * (1 - p0) / n), p = pNorm(z, alt);
+      return { lines: ['prop' + altSym(alt) + fmtNum(p0), 'z=' + SF(z), 'p=' + SF(p), 'p̂=' + SF(ph), 'n=' + SF(n)], draw: { dist: 'z', stat: z, alt, p, label: 'z' } };
+    } },
+  { id: '2p', name: '2-PropZTest', draw: true, fields: [T_('x1', 'x1:', '0'), T_('n1', 'n1:', '1'), T_('x2', 'x2:', '0'), T_('n2', 'n2:', '1'), O_('alt', 'p1:', ALT.p2)],
+    run(g) {
+      const x1 = g.num('x1'), n1 = posInt(g.num('n1')), x2 = g.num('x2'), n2 = posInt(g.num('n2')), alt = g.opt('alt');
+      if (!isInt(x1) || !isInt(x2) || x1 < 0 || x2 < 0 || x1 > n1 || x2 > n2) err('DOMAIN');
+      const p1 = x1 / n1, p2 = x2 / n2, ph = (x1 + x2) / (n1 + n2);
+      const se = Math.sqrt(ph * (1 - ph) * (1 / n1 + 1 / n2)); if (se === 0) err('DOMAIN');
+      const z = (p1 - p2) / se, p = pNorm(z, alt);
+      return { lines: ['p1' + altSym(alt) + 'p2', 'z=' + SF(z), 'p=' + SF(p), 'p̂1=' + SF(p1), 'p̂2=' + SF(p2), 'p̂=' + SF(ph), 'n1=' + SF(n1), 'n2=' + SF(n2)], draw: { dist: 'z', stat: z, alt, p, label: 'z' } };
+    } },
+  { id: 'zint', name: 'ZInterval', fields: [INPT, T_('sig', 'σ:', '1'), ...one(false), CL],
+    run(g) {
+      const sig = g.num('sig'); if (!(sig > 0)) err('DOMAIN');
+      const s = oneSample(g), c = cLevel(g.num('cl')), me = invNorm((1 + c) / 2) * sig / Math.sqrt(s.n);
+      return { lines: [ival(s.m - me, s.m + me), 'ME=' + SF(me), 'x̄=' + SF(s.m), ...(s.data ? ['Sx=' + SF(s.sx)] : []), 'n=' + SF(s.n)] };
+    } },
+  { id: 'tint', name: 'TInterval', fields: [INPT, ...one(true), CL],
+    run(g) {
+      const s = oneSample(g, '', true); if (!(s.sx > 0) || s.n < 2) err('DOMAIN');
+      const c = cLevel(g.num('cl')), me = invT((1 + c) / 2, s.n - 1) * s.sx / Math.sqrt(s.n);
+      return { lines: [ival(s.m - me, s.m + me), 'ME=' + SF(me), 'df=' + SF(s.n - 1), 'x̄=' + SF(s.m), 'Sx=' + SF(s.sx), 'n=' + SF(s.n)] };
+    } },
+  { id: '2zint', name: '2-SampZInt', fields: [INPT, T_('sig1', 'σ1:', '1'), T_('sig2', 'σ2:', '1'), ...two(false), CL],
+    run(g) {
+      const s1 = g.num('sig1'), s2 = g.num('sig2'); if (!(s1 > 0 && s2 > 0)) err('DOMAIN');
+      const [a, b] = both(g), c = cLevel(g.num('cl'));
+      const d = a.m - b.m, me = invNorm((1 + c) / 2) * Math.sqrt(s1 * s1 / a.n + s2 * s2 / b.n);
+      return { lines: [ival(d - me, d + me), 'ME=' + SF(me), 'x̄1=' + SF(a.m), 'x̄2=' + SF(b.m), ...(a.data ? ['Sx1=' + SF(a.sx), 'Sx2=' + SF(b.sx)] : []), 'n1=' + SF(a.n), 'n2=' + SF(b.n)] };
+    } },
+  { id: '2tint', name: '2-SampTInt', fields: [INPT, ...two(true), CL, O_('pool', 'Pooled:', ['No', 'Yes'])],
+    run(g) {
+      const [a, b] = both(g), c = cLevel(g.num('cl')), pooled = g.opt('pool') === 1;
+      const r = twoT(a, b, pooled), d = a.m - b.m, me = invT((1 + c) / 2, r.df) * r.se;
+      return { lines: [ival(d - me, d + me), 'ME=' + SF(me), 'df=' + SF(r.df), 'x̄1=' + SF(a.m), 'x̄2=' + SF(b.m), 'Sx1=' + SF(a.sx), 'Sx2=' + SF(b.sx), ...(pooled ? ['Sxp=' + SF(r.sp)] : []), 'n1=' + SF(a.n), 'n2=' + SF(b.n)] };
+    } },
+  { id: '1pint', name: '1-PropZInt', fields: [T_('x', 'x:', '0'), T_('n', 'n:', '1'), CL],
+    run(g) {
+      const x = g.num('x'), n = posInt(g.num('n')); if (!isInt(x) || x < 0 || x > n) err('DOMAIN');
+      const c = cLevel(g.num('cl')), ph = x / n, me = invNorm((1 + c) / 2) * Math.sqrt(ph * (1 - ph) / n);
+      return { lines: [ival(ph - me, ph + me), 'ME=' + SF(me), 'p̂=' + SF(ph), 'n=' + SF(n)] };
+    } },
+  { id: '2pint', name: '2-PropZInt', fields: [T_('x1', 'x1:', '0'), T_('n1', 'n1:', '1'), T_('x2', 'x2:', '0'), T_('n2', 'n2:', '1'), CL],
+    run(g) {
+      const x1 = g.num('x1'), n1 = posInt(g.num('n1')), x2 = g.num('x2'), n2 = posInt(g.num('n2'));
+      if (!isInt(x1) || !isInt(x2) || x1 < 0 || x2 < 0 || x1 > n1 || x2 > n2) err('DOMAIN');
+      const c = cLevel(g.num('cl')), p1 = x1 / n1, p2 = x2 / n2, d = p1 - p2;
+      const me = invNorm((1 + c) / 2) * Math.sqrt(p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2);
+      return { lines: [ival(d - me, d + me), 'ME=' + SF(me), 'p̂1=' + SF(p1), 'p̂2=' + SF(p2), 'n1=' + SF(n1), 'n2=' + SF(n2)] };
+    } },
+  { id: 'chi', name: 'χ²-Test', draw: true, fields: [O_('obs', 'Obs: L1 to', ['L2', 'L3', 'L4', 'L5', 'L6'])],
+    run(g) {
+      const k = g.opt('obs') + 2, cols = S.lists.slice(0, k), r = cols[0].length;
+      if (r < 2 || cols.some(c => c.length !== r)) err('DIM MISMATCH');
+      if (cols.some(c => c.some(v => v < 0))) err('DOMAIN');
+      const rowT = Array.from({ length: r }, (_, i) => sumOf(cols.map(c => c[i]))), colT = cols.map(sumOf), tot = sumOf(colT);
+      let chi = 0; const E = cols.map(() => []);
+      cols.forEach((c, j) => c.forEach((o, i) => { const e = rowT[i] * colT[j] / tot; if (!(e > 0)) err('DOMAIN'); E[j].push(e); chi += (o - e) ** 2 / e; }));
+      const df = (r - 1) * (k - 1), p = chiTail(chi, df);
+      return { lines: ['χ²=' + SF(chi), 'p=' + SF(p), 'df=' + SF(df), 'Expected:', ...E.map((c, j) => ' L' + (j + 1) + ': ' + showVal(c))], draw: { dist: 'chi', df, stat: chi, alt: 2, p, label: 'χ²' } };
+    } },
+  { id: 'gof', name: 'χ²GOF-Test', draw: true, fields: [T_('obs', 'Observed:', 'L1'), T_('exp', 'Expected:', 'L2'), T_('df', 'df:', '')],
+    run(g) {
+      const O = g.list('obs'), E = g.list('exp');
+      if (O.length !== E.length || O.length < 2) err('DIM MISMATCH');
+      if (E.some(e => !(e > 0))) err('DOMAIN');
+      const cn = O.map((o, i) => (o - E[i]) ** 2 / E[i]), chi = sumOf(cn);
+      const df = g.has('df') ? posInt(g.num('df')) : O.length - 1, p = chiTail(chi, df);
+      return { lines: ['χ²=' + SF(chi), 'p=' + SF(p), 'df=' + SF(df), 'CNTRB=' + showVal(cn)], draw: { dist: 'chi', df, stat: chi, alt: 2, p, label: 'χ²' } };
+    } },
+  { id: 'f', name: '2-SampFTest', draw: true, fields: [INPT, Dd(T_('list1', 'List1:', 'L1')), Dd(T_('list2', 'List2:', 'L2')), Dd(T_('freq1', 'Freq1:', '1')), Dd(T_('freq2', 'Freq2:', '1')),
+      Ss(T_('sx1', 'Sx1:', '1')), Ss(T_('n1', 'n1:', '30')), Ss(T_('sx2', 'Sx2:', '1')), Ss(T_('n2', 'n2:', '30')), O_('alt', 'σ1:', ALT.s2)],
+    run(g) {
+      let a, b;
+      if (g.opt('inpt') === 0) { a = sampleStats(g.list('list1'), g.freq('freq1')); b = sampleStats(g.list('list2'), g.freq('freq2')); a.data = true; }
+      else { a = { sx: g.num('sx1'), n: posInt(g.num('n1')) }; b = { sx: g.num('sx2'), n: posInt(g.num('n2')) }; }
+      if (!(a.sx > 0 && b.sx > 0) || a.n < 2 || b.n < 2) err('DOMAIN');
+      const alt = g.opt('alt'), d1 = a.n - 1, d2 = b.n - 1, F = a.sx * a.sx / (b.sx * b.sx);
+      const up = fTail(F, d1, d2), lo = fLower(F, d1, d2), p = alt === 0 ? 2 * Math.min(up, lo) : alt === 1 ? lo : up;
+      return { lines: ['σ1' + altSym(alt) + 'σ2', 'F=' + SF(F), 'p=' + SF(p), 'Sx1=' + SF(a.sx), 'Sx2=' + SF(b.sx), ...(a.data ? ['x̄1=' + SF(a.m), 'x̄2=' + SF(b.m)] : []), 'n1=' + SF(a.n), 'n2=' + SF(b.n)],
+        draw: { dist: 'F', df: d1, df2: d2, stat: F, alt: alt === 0 ? (up < lo ? 2 : 1) : alt, p, label: 'F' } };
+    } },
+  { id: 'lrt', name: 'LinRegTTest', draw: true, fields: [T_('xl', 'Xlist:', 'L1'), T_('yl', 'Ylist:', 'L2'), T_('freq', 'Freq:', '1'), O_('alt', 'β & ρ:', ALT.z), T_('reg', 'RegEQ:', '')],
+    run(g) {
+      const R = linT(g), alt = g.opt('alt'), p = pT(R.t, R.df, alt);
+      const reg = g.raw('reg');
+      if (reg.length === 1 && isY(reg[0])) { const y = S.Y[YLAB.indexOf(reg[0][1])]; y.ed.set([...numTokens(R.int), '+', ...numTokens(R.slope), 'X']); y.on = true; y.ast = undefined; S.graphDirty = true; }
+      return { lines: ['y=a+bx', 'β' + altSym(alt) + '0 and ρ' + altSym(alt) + '0', 't=' + SF(R.t), 'p=' + SF(p), 'df=' + SF(R.df), 'a=' + SF(R.int), 'b=' + SF(R.slope), 's=' + SF(R.s), 'r²=' + SF(R.r * R.r), 'r=' + SF(R.r)],
+        draw: { dist: 't', df: R.df, stat: R.t, alt, p, label: 't' } };
+    } },
+  { id: 'lrti', name: 'LinRegTInt', fields: [T_('xl', 'Xlist:', 'L1'), T_('yl', 'Ylist:', 'L2'), T_('freq', 'Freq:', '1'), CL],
+    run(g) {
+      const R = linT(g), c = cLevel(g.num('cl')), me = invT((1 + c) / 2, R.df) * R.se;
+      return { lines: ['y=a+bx', ival(R.slope - me, R.slope + me), 'b=' + SF(R.slope), 'df=' + SF(R.df), 's=' + SF(R.s), 'a=' + SF(R.int), 'r²=' + SF(R.r * R.r), 'r=' + SF(R.r)] };
+    } },
+];
+function anova(groups) {
+  if (groups.length < 2) err('ARGUMENT');
+  groups.forEach(listArg);
+  const all = groups.flat(), N = all.length, k = groups.length, M = sumOf(all) / N;
+  let ssb = 0, ssw = 0;
+  for (const gr of groups) { const m = sumOf(gr) / gr.length; ssb += gr.length * (m - M) ** 2; ssw += sumOf(gr.map(x => (x - m) ** 2)); }
+  const dfb = k - 1, dfw = N - k; if (dfw < 1) err('DOMAIN');
+  const msb = ssb / dfb, msw = ssw / dfw, F = msb / msw, p = fTail(F, dfb, dfw);
+  return { title: 'One-way ANOVA', lines: ['F=' + SF(F), 'p=' + SF(p), 'Factor', ' df=' + SF(dfb), ' SS=' + SF(ssb), ' MS=' + SF(msb), 'Error', ' df=' + SF(dfw), ' SS=' + SF(ssw), ' MS=' + SF(msw), 'Sxp=' + SF(Math.sqrt(msw))] };
+}
+function medMed(xs, ys, f) {
+  let [X, Y] = pairs(xs, ys, f);
+  const n = X.length; if (n < 3) err('STAT');
+  const ord = X.map((_, i) => i).sort((a, b) => X[a] - X[b]);
+  X = ord.map(i => X[i]); Y = ord.map(i => Y[i]);
+  const sz = n % 3 === 0 ? [n / 3, n / 3, n / 3] : n % 3 === 1 ? [(n - 1) / 3, (n - 1) / 3 + 1, (n - 1) / 3] : [(n + 1) / 3, (n + 1) / 3 - 1, (n + 1) / 3];
+  const grp = [], st = [0, sz[0], sz[0] + sz[1]];
+  for (let k = 0; k < 3; k++) { const xs = X.slice(st[k], st[k] + sz[k]), ys = Y.slice(st[k], st[k] + sz[k]); grp.push([medianSorted(sortNum(xs)), medianSorted(sortNum(ys))]); }
+  const [[x1, y1], [x2, y2], [x3, y3]] = grp;
+  if (x3 === x1) err('STAT');
+  const a = (y3 - y1) / (x3 - x1), b0 = y1 - a * x1, b = (2 * b0 + (y2 - a * x2)) / 3;
+  return { title: 'Med-Med', lines: ['y=ax+b', 'a=' + SF(a), 'b=' + SF(b)], eq: [...numTokens(a), 'X', '+', ...numTokens(b)] };
+}
+
 function runCommand(cmd, rest) {
   if (cmd.endsWith('(') && rest[rest.length - 1] === ')') rest = rest.slice(0, -1);
   const args = splitArgs(rest);
@@ -873,6 +1142,7 @@ function runCommand(cmd, rest) {
     case 'ClrList ': if (!args.length) err('SYNTAX'); args.map(argListRef).forEach(r => { S.lists[r] = []; }); S.graphDirty = true; return 'Done';
     case 'Fill(': { if (args.length !== 2) err('ARGUMENT'); const v = evalTokens(args[0]); const r = argListRef(args[1]); S.lists[r] = S.lists[r].map(() => v); return 'Done'; }
     case '1-Var Stats ': return { stat: oneVar(args[0] ? argList(args[0]) : S.lists[0].slice(), args[1] ? argList(args[1]) : undefined) };
+    case 'ANOVA(': return { stat: anova(args.map(argList)) };
     case '2-Var Stats ': return { stat: twoVar(args[0] ? argList(args[0]) : S.lists[0].slice(), args[1] ? argList(args[1]) : S.lists[1].slice(), args[2] ? argList(args[2]) : undefined) };
   }
   // regressions: Xlist, Ylist, [freq], [Y= function to store the equation in]
@@ -881,7 +1151,7 @@ function runCommand(cmd, rest) {
   const xs = args[0] ? argList(args[0]) : S.lists[0].slice();
   const ys = args[1] ? argList(args[1]) : S.lists[1].slice();
   const f = args[2] ? argList(args[2]) : undefined;
-  const res = regress(cmd, xs, ys, f);
+  const res = cmd === 'Med-Med ' ? medMed(xs, ys, f) : regress(cmd, xs, ys, f);
   if (yi >= 0) {
     const y = S.Y[yi]; y.ed.set(res.eq); y.on = true; y.ast = undefined; S.graphDirty = true;
     res.lines.push('Stored in Y' + YLAB[yi]);
@@ -901,7 +1171,9 @@ function drawCh(ch, r, c, o = {}) {
   ctx.font = o.font || FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillText(ch, x + CW / 2, y + 16);
 }
-function drawStr(str, r, c, o = {}) { const a = [...str]; for (let i = 0; i < a.length; i++) drawCh(a[i], r, c + i, o); }
+// split into screen cells, keeping combining marks (x̄, p̂) with their letter
+function cells(str) { const out = []; for (const ch of str) { if (/[̀-ͯ]/.test(ch) && out.length) out[out.length - 1] += ch; else out.push(ch); } return out; }
+function drawStr(str, r, c, o = {}) { const a = cells(str); for (let i = 0; i < a.length; i++) drawCh(a[i], r, c + i, o); }
 function drawCursor(r, c, under) {
   if (!S.blink) return;
   const ind = S.second ? '↑' : S.alpha ? 'A' : null;
@@ -1349,6 +1621,107 @@ function drawStatScr() {
   if (st.scroll + vis < st.lines.length) drawCh('↓', ROWS - 1, COLS - 1, { color: '#2b4f8a' });
 }
 
+/* ---- STAT TESTS input screen ---- */
+function testRows() {
+  const t = S.test, rows = t.def.fields.filter(f => !f.when || f.when(t.v));
+  rows.push({ kind: 'act', opts: t.def.draw ? ['Calculate', 'Draw'] : ['Calculate'] });
+  return rows;
+}
+function testTokens(s) { return s === '' ? [] : isL(s) || isY(s) ? [s] : [...s]; }
+function openTest(def) {
+  closeGraphState();
+  S.testVals = S.testVals || {};
+  if (!S.testVals[def.id]) { const v = {}; def.fields.forEach(f => { v[f.key] = f.kind === 'opt' ? 0 : testTokens(f.def); }); S.testVals[def.id] = v; }
+  S.test = { def, v: S.testVals[def.id], sel: 0, scroll: 0, actC: 0, ed: null };
+  loadTestRow(); S.screen = 'test';
+}
+function loadTestRow() {
+  const t = S.test, f = testRows()[t.sel];
+  if (f && f.kind === 'txt') { t.ed = new Ed(t.v[f.key].slice()); t.ed.c = 0; t.ed.fresh = true; t.ed.dirty = false; t.edKey = f.key; }
+  else { t.ed = null; t.edKey = null; }
+}
+function commitTestRow() { const t = S.test; if (t.ed && t.ed.dirty && t.edKey) t.v[t.edKey] = t.ed.t.slice(); }
+function runTest(draw) {
+  commitTestRow();
+  const t = S.test, v = t.v;
+  const g = {
+    num: k => { if (!v[k] || !v[k].length) err('SYNTAX'); return evalTokens(v[k]); },
+    list: k => argList(v[k]),
+    freq: k => { const x = v[k]; if (!x || !x.length || (x.length === 1 && x[0] === '1')) return undefined; return argList(x); },
+    opt: k => v[k], has: k => !!(v[k] && v[k].length), raw: k => v[k] || [],
+  };
+  try {
+    const R = t.def.run(g);
+    if (draw && R.draw) { S.tdraw = { ...R.draw, title: t.def.name }; S.screen = 'tdraw'; }
+    else { S.stat = { title: t.def.name, lines: R.lines, scroll: 0, back: 'test' }; S.screen = 'stat'; }
+  } catch (e) {
+    if (!(e instanceof CalcError)) throw e;
+    showError(e.type, () => { S.screen = 'test'; });
+  }
+}
+function drawTest() {
+  const t = S.test, rows = testRows(), vis = ROWS - 1;
+  if (t.sel >= rows.length) t.sel = rows.length - 1;
+  if (t.sel < t.scroll) t.scroll = t.sel;
+  if (t.sel >= t.scroll + vis) t.scroll = t.sel - vis + 1;
+  drawStr(t.def.name, 0, 0, { color: '#2b4f8a' });
+  for (let r = 0; r < vis; r++) {
+    const i = t.scroll + r, f = rows[i]; if (!f) break;
+    const row = r + 1, here = i === t.sel;
+    let c = 0;
+    if (f.label) { drawStr(f.label, row, 0); c = cells(f.label).length + 1; }
+    if (f.kind === 'txt') {
+      if (here && t.ed) {
+        const ch = cells(t.ed.str()), cp = t.ed.curChar(), avail = COLS - c, off = Math.max(0, cp - avail + 1);
+        drawStr(ch.slice(off, off + avail).join(''), row, c);
+        drawCursor(row, c + cp - off, ch[cp]);
+      } else drawStr(cells(t.v[f.key].join('')).slice(0, COLS - c).join(''), row, c);
+    } else {
+      const cur = f.kind === 'act' ? t.actC : t.v[f.key];
+      f.opts.forEach((o, j) => {
+        let st = {};
+        if (j === cur) st = here ? { bg: '#111' } : f.kind === 'act' ? {} : { bg: '#2b6cc4' };
+        drawStr(o, row, c, st); c += cells(o).length + 1;
+      });
+    }
+  }
+  if (t.scroll > 0) drawCh('↑', 1, COLS - 1, { color: '#2b4f8a' });
+  if (t.scroll + vis < rows.length) drawCh('↓', ROWS - 1, COLS - 1, { color: '#2b4f8a' });
+}
+function drawTDraw() {
+  const d = S.tdraw;
+  let pdf, x0, x1;
+  if (d.dist === 'z' || d.dist === 't') {
+    pdf = d.dist === 'z' ? z => Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI) : z => tpdf(z, d.df);
+    const R = Math.max(3.5, Math.min(Math.abs(d.stat) * 1.15, 8)); x0 = -R; x1 = R;
+  } else if (d.dist === 'chi') { pdf = x => chipdf(x, d.df); x0 = 0; x1 = Math.max(d.df + 4 * Math.sqrt(2 * d.df), Math.min(d.stat * 1.15, 1e6)); }
+  else { pdf = x => fpdf(x, d.df, d.df2); x0 = 0; x1 = Math.max(4, Math.min(d.stat * 1.2, 50)); }
+  const top = SB + 26, bot = H - 30, N = 320;
+  let ymax = 0;
+  for (let i = 3; i <= N; i++) { const y = pdf(x0 + (x1 - x0) * i / N); if (Number.isFinite(y)) ymax = Math.max(ymax, y); }
+  ymax = ymax * 1.08 || 1;
+  const PX = x => 4 + (x - x0) / (x1 - x0) * (W - 8), PY = y => bot - Math.min(y, ymax) / ymax * (bot - top);
+  const s = d.stat, sym = d.dist === 'z' || d.dist === 't';
+  const regions = d.alt === 0 && sym ? [[x0, -Math.abs(s)], [Math.abs(s), x1]] : d.alt === 1 ? [[x0, s]] : [[s, x1]];
+  ctx.save(); ctx.beginPath(); ctx.rect(0, SB, W, H - SB); ctx.clip();
+  ctx.fillStyle = 'rgba(43,108,196,.35)';
+  for (let [a, b] of regions) {
+    a = Math.max(a, x0); b = Math.min(b, x1); if (!(b > a)) continue;
+    ctx.beginPath(); ctx.moveTo(PX(a), bot);
+    for (let i = 0; i <= 200; i++) { const x = a + (b - a) * i / 200, y = pdf(x); ctx.lineTo(PX(x), PY(Number.isFinite(y) ? y : ymax)); }
+    ctx.lineTo(PX(b), bot); ctx.closePath(); ctx.fill();
+  }
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, bot + 0.5); ctx.lineTo(W, bot + 0.5); ctx.stroke();
+  ctx.strokeStyle = '#1a5fd8'; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 1; i <= N; i++) { const x = x0 + (x1 - x0) * i / N, y = pdf(x); if (!Number.isFinite(y)) continue; i === 1 ? ctx.moveTo(PX(x), PY(y)) : ctx.lineTo(PX(x), PY(y)); }
+  ctx.stroke(); ctx.restore();
+  ctx.font = SANS; ctx.fillStyle = '#2b4f8a'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(d.title, 6, SB + 18);
+  ctx.fillStyle = '#111';
+  ctx.fillText(d.label + '=' + fmtNum(s, 7), 6, H - 9);
+  ctx.fillText('p=' + fmtNum(d.p, 7), 165, H - 9);
+}
+
 /* ---- stat plots on the graph ---- */
 function plotMark(c, px, py, m) {
   if (m === 0) c.strokeRect(Math.round(px) - 2.5, Math.round(py) - 2.5, 5, 5);
@@ -1458,6 +1831,8 @@ function draw() {
     case 'table': drawTable(); break;
     case 'ledit': drawLedit(); break;
     case 'stat': drawStatScr(); break;
+    case 'test': drawTest(); break;
+    case 'tdraw': drawTDraw(); break;
   }
   drawStatus();
   drawToast();
@@ -1720,7 +2095,7 @@ const MENUS = {
     { title: 'LOGIC', items: [T(' and ', 'and'), T(' or ', 'or'), T(' xor ', 'xor'), T('not(')] },
   ]) }),
   ANGLE: () => ({ tabs: mkTabs([{ title: 'ANGLE', items: [T('°'), T('ʳ')] }]) }),
-  DISTR: () => ({ tabs: mkTabs([{ title: 'DISTR', items: [T('normalpdf('), T('normalcdf('), T('invNorm('), T('binompdf('), T('binomcdf('), T('poissonpdf('), T('poissoncdf('), T('geometpdf('), T('geometcdf(')] }]) }),
+  DISTR: () => ({ tabs: mkTabs([{ title: 'DISTR', items: [T('normalpdf('), T('normalcdf('), T('invNorm('), T('invT('), T('tpdf('), T('tcdf('), T('χ²pdf('), T('χ²cdf('), T('Fpdf('), T('Fcdf('), T('binompdf('), T('binomcdf('), T('poissonpdf('), T('poissoncdf('), T('geometpdf('), T('geometcdf(')] }]) }),
   VARS: () => ({ tabs: mkTabs([
     { title: 'VARS', items: Object.keys(WINVARS).map(k => T(k)) },
     { title: 'Y-VARS', items: YLAB.map(d => T('Y' + d)) },
@@ -1744,9 +2119,10 @@ const MENUS = {
     { title: 'EDIT', items: [{ label: 'Edit…', act: openLedit }, T('SortA('), T('SortD('), T('ClrList ', 'ClrList')] },
     { title: 'CALC', items: [
       T('1-Var Stats ', '1-Var Stats'), T('2-Var Stats ', '2-Var Stats'),
-      { label: 'Med-Med', dim: true, act: () => { goHome(); toast('Med-Med is not in this version'); } },
+      T('Med-Med ', 'Med-Med'),
       ...REGS.map(r => T(r, r.trim())),
     ] },
+    { title: 'TESTS', items: TESTS.map(d => ({ label: d.name + '…', act: () => openTest(d) })).concat([T('ANOVA(')]) },
   ]) }),
   LIST: () => ({ tabs: mkTabs([
     { title: 'NAMES', items: ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'].map(l => T(l)) },
@@ -1771,7 +2147,7 @@ const MENUS = {
   CATALOG: () => {
     const toks = ['abs(', ' and ', 'binomcdf(', 'binompdf(', 'cos(', 'cos⁻¹(', 'cosh(', 'cosh⁻¹(', 'e^(', 'fMax(', 'fMin(', 'fnInt(', 'fPart(', 'gcd(', 'geometcdf(', 'geometpdf(', 'int(', 'invNorm(', 'iPart(', 'lcm(', 'ln(', 'log(', 'logBASE(', 'max(', 'min(', 'nCr', 'nDeriv(', 'normalcdf(', 'normalpdf(', 'not(', 'nPr', ' or ', 'poissoncdf(', 'poissonpdf(', 'rand', 'randInt(', 'remainder(', 'round(', 'sin(', 'sin⁻¹(', 'sinh(', 'sinh⁻¹(', 'tan(', 'tan⁻¹(', 'tanh(', 'tanh⁻¹(', ' xor ', '►Dec', '►Frac', 'Σ(',
       'augment(', 'ClrList ', 'cumSum(', 'dim(', 'Fill(', 'mean(', 'median(', 'prod(', 'seq(', 'SortA(', 'SortD(', 'stdDev(', 'sum(', 'variance(', 'ΔList(',
-      '1-Var Stats ', '2-Var Stats ', ...REGS];
+      '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', 'invT(', 'tpdf(', 'tcdf(', 'χ²pdf(', 'χ²cdf(', 'Fpdf(', 'Fcdf(', ...REGS];
     const items = toks.map(t => { const tok = t === 'nCr' || t === 'nPr' ? ' ' + t + ' ' : t; return { label: t.trim(), act: menuInsert(tok) }; });
     items.sort((a, b) => a.label.replace(/^[►Σ]/, 'zz').localeCompare(b.label.replace(/^[►Σ]/, 'zz'), 'en', { sensitivity: 'base' }));
     return { catalog: true, tabs: [{ title: 'CATALOG', items }] };
@@ -1799,6 +2175,7 @@ function editorFor(screen) {
   if (screen === 'form') return S.form && S.form.ed;
   if (screen === 'graph' && S.g.prompt) return S.g.prompt.ed;
   if (screen === 'ledit') return S.ledit.ed;
+  if (screen === 'test') return S.test && S.test.ed;
   return null;
 }
 function insertTok(tok) {
@@ -2058,9 +2435,34 @@ const HANDLERS = {
     switch (a) {
       case 'UP': st.scroll = Math.max(0, st.scroll - 1); return true;
       case 'DOWN': st.scroll++; return true;
-      case 'CLEAR': case 'ENTER': case 'BS': case 'QUIT': goHome(); return true;
+      case 'CLEAR': case 'ENTER': case 'BS': if (st.back) { S.screen = st.back; return true; } goHome(); return true;
+      case 'QUIT': goHome(); return true;
     }
     goHome(); return false;
+  },
+  tdraw(a) {
+    if (a === 'CLEAR' || a === 'ENTER' || a === 'BS') { S.screen = 'test'; return true; }
+    goHome(); return false;
+  },
+  test(a) {
+    const t = S.test, rows = testRows(), f = rows[t.sel];
+    const move = d => { commitTestRow(); t.sel = Math.max(0, Math.min(rows.length - 1, t.sel + d)); loadTestRow(); };
+    switch (a) {
+      case 'UP': move(-1); return true;
+      case 'DOWN': move(1); return true;
+      case 'LEFT': case 'RIGHT': {
+        const d = a === 'LEFT' ? -1 : 1;
+        if (f.kind === 'txt') { d < 0 ? t.ed.left() : t.ed.right(); return true; }
+        if (f.kind === 'act') { t.actC = (t.actC + d + f.opts.length) % f.opts.length; return true; }
+        t.v[f.key] = (t.v[f.key] + d + f.opts.length) % f.opts.length; return true;
+      }
+      case 'ENTER': if (f.kind === 'act') { runTest(t.actC === 1); return true; } move(1); return true;
+      case 'CLEAR': if (f.kind === 'txt' && t.ed.t.length) { t.ed.clear(); return true; } commitTestRow(); goHome(); return true;
+      case 'DEL': if (f.kind === 'txt') t.ed.del(); return true;
+      case 'BS': if (f.kind === 'txt') t.ed.bs(); return true;
+    }
+    if (a.startsWith('i:')) return f.kind !== 'txt';
+    commitTestRow(); return false;
   },
   table(a) {
     const t = S.table, fns = activeFns(), ncols = 1 + Math.min(3, Math.max(0, fns.length - t.fcol));
@@ -2254,7 +2656,7 @@ load();
 buildKeys();
 fit();
 redraw();
-window.__calc = { press, doAction, S, runLine, fmtNum };
+window.__calc = { press, doAction, S, runLine, fmtNum, TESTS, openTest, runTest };
 })();
 </script>
 </body>
