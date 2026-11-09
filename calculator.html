@@ -238,7 +238,7 @@ const S = {
   plots: [0, 1, 2].map(() => ({ on: false, type: 0, x: 0, y: 1, mark: 0 })),
   ledit: { col: 0, fcol: 0, row: 0, off: 0, ed: null },
   stat: null,
-  mats: {}, statVars: {}, seqGen: 0, strs: {}, draws: [], progs: {},
+  mats: {}, statVars: {}, seqGen: 0, strs: {}, draws: [], progs: {}, pics: {}, gdbs: {},
   P: [0, 1, 2, 3, 4, 5].map(i => ({ x: new Ed([]), y: new Ed([]), on: true, color: COLORS[i] })),
   R: [0, 1, 2, 3, 4, 5].map(i => ({ ed: new Ed([]), on: true, color: COLORS[i] })),
   Q: ['u', 'v', 'w'].map((name, i) => ({ name, e: new Ed([]), init: new Ed([]), on: true, color: COLORS[i] })),
@@ -253,7 +253,7 @@ function save() {
     localStorage.setItem('ce-calc-v1', JSON.stringify({
       mode: S.mode, fmt: S.fmt, win: S.win, tbl: S.tbl, vars: Object.fromEntries(Object.entries(S.vars).map(([k, v]) => [k, isC(v) ? { re: v.re, im: v.im } : v])), ans: typeof S.ans === 'number' || Array.isArray(S.ans) ? S.ans : 0,
       Y: S.Y.map(y => ({ t: y.ed.t, on: y.on, style: y.style })), entries: S.entries.slice(-20),
-      lists: S.lists, plots: S.plots, mats: S.mats, strs: S.strs, progs: S.progs,
+      lists: S.lists, plots: S.plots, mats: S.mats, strs: S.strs, progs: S.progs, pics: S.pics, gdbs: S.gdbs,
       P: S.P.map(q => ({ x: q.x.t, y: q.y.t, on: q.on })), R: S.R.map(q => ({ t: q.ed.t, on: q.on })), Q: S.Q.map(q => ({ e: q.e.t, init: q.init.t, on: q.on })),
     }));
   } catch (e) { /* storage unavailable */ }
@@ -270,6 +270,8 @@ function load() {
     if (Array.isArray(d.entries)) S.entries = d.entries.filter(Array.isArray);
     if (Array.isArray(d.lists)) d.lists.slice(0, 6).forEach((l, i) => { if (Array.isArray(l)) S.lists[i] = l.filter(v => typeof v === 'number' && isFinite(v)).slice(0, 999); });
     const toks = a => Array.isArray(a) ? a.filter(x => typeof x === 'string') : [];
+    if (d.pics && typeof d.pics === 'object') S.pics = d.pics;
+    if (d.gdbs && typeof d.gdbs === 'object') S.gdbs = d.gdbs;
     if (d.strs && typeof d.strs === 'object') Object.entries(d.strs).forEach(([k, v]) => { if (/^[0-9]$/.test(k) && typeof v === 'string') S.strs[k] = v; });
     if (d.progs && typeof d.progs === 'object') Object.entries(d.progs).forEach(([k, v]) => { if (/^[A-Zθ][A-Z0-9θ]{0,7}$/.test(k) && Array.isArray(v)) S.progs[k] = v.map(toks); });
     if (Array.isArray(d.P)) d.P.slice(0, 6).forEach((q, i) => { S.P[i].x.set(toks(q.x)); S.P[i].y.set(toks(q.y)); S.P[i].on = !!q.on; });
@@ -1255,7 +1257,7 @@ function runLine(toks) {
    STAT commands: sorting, 1/2-Var Stats, regressions
    ================================================================= */
 const REGS = ['LinReg(ax+b) ', 'QuadReg ', 'CubicReg ', 'QuartReg ', 'LinReg(a+bx) ', 'LnReg ', 'ExpReg ', 'PwrReg '];
-const DRAWCMDS = ['ClrDraw', 'Line(', 'Horizontal ', 'Vertical ', 'Tangent(', 'DrawF ', 'Shade(', 'DrawInv ', 'Circle(', 'Text(', 'Pt-On(', 'Pt-Off(', 'Pt-Change(', 'Pxl-On(', 'Pxl-Off(', 'Pxl-Change('];
+const DRAWCMDS = ['StorePic ', 'RecallPic ', 'StoreGDB ', 'RecallGDB ', 'ClrDraw', 'Line(', 'Horizontal ', 'Vertical ', 'Tangent(', 'DrawF ', 'Shade(', 'DrawInv ', 'Circle(', 'Text(', 'Pt-On(', 'Pt-Off(', 'Pt-Change(', 'Pxl-On(', 'Pxl-Off(', 'Pxl-Change('];
 const COMMANDS = new Set([...DRAWCMDS, 'Matr►list(', 'List►matr(', 'SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
 function splitArgs(t) {
   const out = []; let cur = [], d = 0;
@@ -1565,7 +1567,17 @@ function drawCommand(cmd, args) {
   const N = k => evalTokens(args[k]);
   const want = (lo, hi = lo) => { if (args.length < lo || args.length > hi) err('ARGUMENT'); };
   const D = S.draws;
+  const slot = () => { want(1); const n = N(0); if (!isInt(n) || n < 0 || n > 9) err('DOMAIN'); return Math.round(n); };
   switch (cmd) {
+    case 'StorePic ': S.pics[slot()] = JSON.parse(JSON.stringify(D)); return 'Done';
+    case 'RecallPic ': { const k = slot(); if (!S.pics[k]) err('UNDEFINED'); D.push(...JSON.parse(JSON.stringify(S.pics[k]))); break; }
+    case 'StoreGDB ': S.gdbs[slot()] = { win: { ...S.win }, Y: S.Y.map(y => ({ t: y.ed.t.slice(), on: y.on, style: y.style })), fmt: { ...S.fmt }, graph: GM() }; return 'Done';
+    case 'RecallGDB ': {
+      const g = S.gdbs[slot()]; if (!g) err('UNDEFINED');
+      Object.assign(S.win, g.win); Object.assign(S.fmt, g.fmt); S.mode.graph = g.graph || 0;
+      g.Y.forEach((y, i) => { S.Y[i].ed.set(y.t.slice()); S.Y[i].on = y.on; S.Y[i].style = y.style; S.Y[i].ast = undefined; });
+      break;
+    }
     case 'ClrDraw': D.length = 0; break;
     case 'Line(': want(4, 5); D.push({ k: 'line', a: [N(0), N(1), N(2), N(3)], erase: args[4] && N(4) === 0 }); break;
     case 'Horizontal ': want(1); D.push({ k: 'h', y: N(0) }); break;
@@ -3640,6 +3652,7 @@ const MENUS = {
   DRAW: () => ({ home: true, tabs: mkTabs([
     { title: 'DRAW', items: [T('ClrDraw'), T('Line('), T('Horizontal ', 'Horizontal'), T('Vertical ', 'Vertical'), T('Tangent('), T('DrawF ', 'DrawF'), T('Shade('), T('DrawInv ', 'DrawInv'), T('Circle('), T('Text(')] },
     { title: 'POINTS', items: [T('Pt-On('), T('Pt-Off('), T('Pt-Change('), T('Pxl-On('), T('Pxl-Off('), T('Pxl-Change(')] },
+    { title: 'STO', items: [T('StorePic ', 'StorePic'), T('RecallPic ', 'RecallPic'), T('StoreGDB ', 'StoreGDB'), T('RecallGDB ', 'RecallGDB')] },
   ]) }),
   MEM: () => ({ tabs: mkTabs([{ title: 'MEMORY', items: [
     { label: 'About', act: () => { goHome(); toast('Web graphing calculator, CE style. Real-number mode, function graphing.', 3500); } },
