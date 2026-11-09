@@ -17,3 +17,21 @@ Peach, Cloud, Honey (cube), Mint Ice, Strawberry (with seeds), Lemon Star (star 
 - **All-time stats** for crunches, shattered shells and best combo, saved in your browser
 - **Shuffle** for a random squishy, **Re-coat** for a fresh shell, and **Auto ASMR** to let it crunch on its own
 - **Keyboard:** Space crunches, 1–3 switch tools, R re-coats, S shuffles
+
+---
+
+# CE Graphing Calculator
+
+`calculator.html` is a color graphing calculator that runs in the browser, laid out like the CE-style handhelds students use. Open it in any browser and click the keys or type on your keyboard.
+
+- **Home screen:** TI-style order of operations, implied multiplication, `(−)` negation, `Ans`, `2nd ENTRY`, `STO→` into A–Z/θ, `►Frac`, and error screens with Quit/Goto
+- **Y= editor:** 10 colored functions, toggle each one on or off by pressing ENTER on its `=` sign
+- **Graph:** WINDOW, FORMAT (grid, axes, labels, coordinates), ZOOM (box, in/out, decimal, square, standard, trig, integer, fit, previous), free cursor and TRACE
+- **CALC:** value, zero, minimum, maximum, intersect, dy/dx and ∫f(x)dx with shading
+- **TABLE** with TBLSET
+- **Menus:** MATH/NUM/PROB, TEST/LOGIC, ANGLE, DISTR (normal, binomial, Poisson, geometric), VARS/Y-VARS, CATALOG
+- **MODE:** Normal/Sci/Eng, Float/Fix 0–9, Radian/Degree, line style
+- **Keyboard:** digits and operators type, Enter, Backspace, Esc = CLEAR, arrows, F1–F5 = Y= WINDOW ZOOM TRACE GRAPH
+- Functions, window, variables and settings are saved in your browser
+
+Not included: lists/STAT, matrices, programs, complex numbers, and parametric/polar graphing.
