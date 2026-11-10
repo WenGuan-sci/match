@@ -22,22 +22,18 @@ Peach, Cloud, Honey (cube), Mint Ice, Strawberry (with seeds), Lemon Star (star 
 
 # CE Graphing Calculator
 
-`calculator.html` is a color graphing calculator that runs in the browser and works like a CE-style handheld. Open it in any browser and click the keys or type on your keyboard. It runs in Classic display mode (no MathPrint templates).
+`calculator.html` is a color graphing calculator that runs in the browser and works like a CE-style handheld. Open it in any browser and click the keys or type on your keyboard.
 
-- **Home screen:** TI order of operations, implied multiplication, `Ans`, `2nd ENTRY`, `STO→`, `►Frac`, `►Dec`, `►DMS`, error screens with Quit/Goto
-- **MODE:** Normal/Sci/Eng, Float/Fix 0–9, Radian/Degree, FUNC/PAR/POL/SEQ, line style, Real/a+bi/re^θi
-- **Graphing:** Y= editor for all four modes (Y1–Y0, X/Y pairs, r1–r6, u/v/w sequences), WINDOW, FORMAT, every ZOOM option, TRACE, CALC (value, zero, min, max, intersect, dy/dx, ∫f(x)dx, plus dy/dt, dx/dt and dr/dθ), TABLE
-- **DRAW:** ClrDraw, Line, Horizontal, Vertical, Tangent, DrawF, Shade, DrawInv, Circle, Text, Pt-On/Off/Change, Pxl-On/Off/Change
-- **Lists and STAT:** list editor, list math, 1/2-Var Stats, every regression (can store into Y=), Med-Med, all 17 STAT TESTS with Calculate and Draw, ANOVA, STAT PLOT (scatter, xyLine, histogram, box, modified box, normal probability), ZoomStat
-- **DISTR:** normal, t, χ², F, binomial, Poisson, geometric (pdf/cdf/inverse)
-- **Matrices:** [A]–[J], matrix editor, det, inverse, transpose, rref/ref, row operations, identity, randM, augment, Matr►list, List►matr
-- **Complex numbers:** i, a+bi and polar display, conj, real, imag, angle, abs
-- **Strings:** Str0–Str9, sub, length, inString, expr, toString
-- **PRGM:** program editor and TI-BASIC interpreter (If/Then/Else, For, While, Repeat, Lbl/Goto, Menu, Input, Prompt, Disp, Output, Pause, getKey, ClrHome, DispGraph, subprograms, ON to break)
-- **Solver** (ALPHA+ENTER or MATH → Solver…)
-- **APPS:** Finance (TVM Solver, tvm_ functions, npv, irr, ►Nom, ►Eff), Poly Root Finder, Simult Eqn Solver
-- **CATALOG** (2nd 0) with every command
-- **Keyboard:** digits and operators type, Enter, Backspace, Esc = CLEAR, arrows, F1–F5 = Y= WINDOW ZOOM TRACE GRAPH
-- Everything you enter (functions, lists, matrices, programs, settings) is saved in your browser
+- **Home screen:** MathPrint (stacked fractions, exponents, radicals, Σ, ∫, d/dx templates, fraction answers) or Classic; TI order of operations, `Ans`, `2nd ENTRY`, `STO→`, `RCL`, `►Frac`, `►Dec`, `►DMS`, error screens with Quit/Goto
+- **MODE:** MathPrint/Classic, Normal/Sci/Eng, Float/Fix, Radian/Degree, FUNC/PAR/POL/SEQ, line style, Real/a+bi/re^θi, Full/Horizontal/Graph-Table, fraction type, answers
+- **Graphing:** Y= editor for all four modes with per-function color and line style, WINDOW, FORMAT, every ZOOM option, TRACE on the CE pixel grid, CALC, TABLE with Ask modes
+- **DRAW:** Line, Horizontal, Vertical, Tangent, DrawF, Shade, DrawInv, Circle, Text, Pen, points and pixels, color arguments, StorePic/RecallPic, StoreGDB/RecallGDB
+- **Lists and STAT:** list editor, list math, 1/2-Var Stats, every regression, Med-Med, all 17 STAT TESTS with Calculate and Draw, ANOVA, six stat plot types, ZoomStat
+- **DISTR:** normal, t, χ², F, binomial, Poisson, geometric, invBinom, plus the DRAW tab (ShadeNorm, Shade_t, Shadeχ², ShadeF)
+- **Matrices**, **complex numbers**, **strings** (Str0–Str9), **piecewise(**, **solve(**, numeric **Solver**
+- **PRGM:** program editor and TI-BASIC interpreter with control flow, I/O, getKey, subprograms, mode/zoom/format commands, clock and timer functions
+- **APPS:** Finance (TVM Solver, amortization, npv, irr) and a PlySmlt2-style polynomial root finder and simultaneous equation solver
+- **MEM:** Mem Management/Delete, ClrAllLists, Reset; **CATALOG** with every command
+- Everything you enter is saved in your browser
 
-Not included: MathPrint templates and stacked fractions, linking to another calculator, Pic/GDB storage, the other preloaded apps (CabriJr, CelSheet, Conics and so on), and USB/exam-mode features.
+Not included: cable linking, exam mode, custom-named lists, Catalog Help, `Select(`, `Manual-Fit`, and the other preloaded apps (Cabri Jr., CellSheet, Conics, Inequality Graphing, Transformation Graphing, Probability Simulation, Periodic Table, Science Tools, Vernier EasyData, TI-Innovator Hub).

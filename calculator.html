@@ -336,7 +336,9 @@ function toFrac(v) {
    ================================================================= */
 const POSTFIX = new Set(['²', '³', '⁻¹', '!', '°', 'ʳ', 'ᵀ']);
 const STATVARS = { 'x̄': 1, 'Σx': 1, 'Σx²': 1, 'Sx': 1, 'σx': 1, 'n ': 1, 'minX': 1, 'maxX': 1, 'Q1': 1, 'Med': 1, 'Q3': 1, 'ȳ': 1, 'Σy': 1, 'Σy²': 1, 'Σxy': 1, 'Sy': 1, 'σy': 1, 'minY': 1, 'maxY': 1, 'a': 1, 'b': 1, 'c': 1, 'd': 1, 'e ': 1, 'r': 1, 'r²': 1, 'R²': 1 };
-const CONSTS = new Set(['π', 'e', 'rand', 'Ans', 'i', 'getKey', 'tvm_Pmt', 'tvm_I%', 'tvm_PV', 'tvm_N', 'tvm_FV', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
+const COLORS_CE = { BLUE: ['#1a5fd8', 10], RED: ['#d8232c', 11], BLACK: ['#151515', 12], MAGENTA: ['#c81fb8', 13], GREEN: ['#13a03b', 14], ORANGE: ['#ef7a10', 15], BROWN: ['#8a4b1f', 16], NAVY: ['#1f2c8f', 17], LTBLUE: ['#2aa6e6', 18], YELLOW: ['#d9ab00', 19], WHITE: ['#ffffff', 20], LTGRAY: ['#c8ccd2', 21], MEDGRAY: ['#9aa0a8', 22], GRAY: ['#6f757d', 23], DARKGRAY: ['#454a52', 24] };
+const colorOf = n => { const e = Object.values(COLORS_CE).find(v => v[1] === Math.round(n)); return e ? e[0] : null; };
+const CONSTS = new Set([...Object.keys(COLORS_CE), 'getTime', 'getDate', 'startTmr', 'isClockOn', 'π', 'e', 'rand', 'Ans', 'i', 'getKey', 'tvm_Pmt', 'tvm_I%', 'tvm_PV', 'tvm_N', 'tvm_FV', ...Object.keys(WINVARS), ...Object.keys(STATVARS)]);
 const RELOPS = new Set(['=', '≠', '>', '≥', '<', '≤']);
 const isY = t => /^Y[0-9]$/.test(t);
 const isVar = t => (t.length === 1 && LETTERS.includes(t)) || t === 'n';
@@ -650,7 +652,9 @@ function strFn(name, a) {
     case 'sub(': { need(a, 3); const c = [...str(a[0])], b = a[1], n = a[2]; if (!isInt(b) || !isInt(n) || b < 1 || n < 0 || b - 1 + n > c.length) err('DOMAIN'); return c.slice(b - 1, b - 1 + n).join(''); }
     case 'inString(': { need(a, 2, 3); const h = str(a[0]), nd = str(a[1]), st = (a[2] ?? 1) - 1; const k = h.indexOf(nd, st); return k < 0 ? 0 : [...h.slice(0, k)].length + 1; }
     case 'expr(': need(a, 1); return evalAny(strTokens(str(a[0])));
-    case 'toString(': need(a, 1); return showVal(a[0]);
+    case 'toString(': case 'eval(': need(a, 1); return showVal(a[0]);
+    case 'getDtStr(': { need(a, 1); const d = new Date(), P2 = x => String(x).padStart(2, '0'); const f = a[0]; return f === 2 ? P2(d.getDate()) + '/' + P2(d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2) : f === 3 ? String(d.getFullYear()).slice(2) + '/' + P2(d.getMonth() + 1) + '/' + P2(d.getDate()) : P2(d.getMonth() + 1) + '/' + P2(d.getDate()) + '/' + String(d.getFullYear()).slice(2); }
+    case 'getTmStr(': { need(a, 1); const d = new Date(), P2 = x => String(x).padStart(2, '0'); return a[0] === 24 ? P2(d.getHours()) + ':' + P2(d.getMinutes()) + ':' + P2(d.getSeconds()) : ((d.getHours() + 11) % 12 + 1) + ':' + P2(d.getMinutes()) + ':' + P2(d.getSeconds()) + (d.getHours() < 12 ? 'AM' : 'PM'); }
   }
   return undefined;
 }
@@ -661,6 +665,8 @@ function catalogToks() {
       '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', 'invT(', 'tpdf(', 'tcdf(', 'χ²pdf(', 'χ²cdf(', 'Fpdf(', 'Fcdf(', ...REGS,
       'det(', 'identity(', 'randM(', 'rref(', 'ref(', 'rowSwap(', 'row+(', '*row(', '*row+(', 'Matr►list(', 'List►matr(', 'conj(', 'real(', 'imag(', 'angle(', '►Rect', '►Polar', '►DMS',
       'R►Pr(', 'R►Pθ(', 'P►Rx(', 'P►Ry(', 'randNorm(', 'randBin(', 'sub(', 'length(', 'inString(', 'expr(', 'toString(', 'getKey', 'i',
+      ...Object.keys(SETCMD), ...Object.keys(ZOOMCMD), ...ARGCMDS, ...Object.keys(COLORS_CE), 'piecewise(', 'solve(', 'randIntNoRep(', 'invBinom(', 'bal(', 'ΣPrn(', 'ΣInt(', 'dbd(',
+      'getTime', 'getDate', 'startTmr', 'checkTmr(', 'dayOfWk(', 'timeCnv(', 'getDtStr(', 'getTmStr(', 'isClockOn', 'eval(',
       ...DRAWCMDS, ...CTL.filter(t => t !== 'prgm'), ...IO.filter(t => t !== 'getKey'), 'tvm_Pmt', 'tvm_I%', 'tvm_PV', 'tvm_N', 'tvm_FV', 'npv(', 'irr(', '►Nom(', '►Eff('];
 }
 let TOKLIST = null;
@@ -790,8 +796,13 @@ function constVal(v) {
     case 'Ans': return Array.isArray(S.ans) ? S.ans.slice() : S.ans;
     case 'i': return new C(0, 1);
     case 'tvm_Pmt': case 'tvm_I%': case 'tvm_PV': case 'tvm_N': case 'tvm_FV': return finFn(v);
+    case 'getTime': { const d = new Date(); return [d.getHours(), d.getMinutes(), d.getSeconds()]; }
+    case 'getDate': { const d = new Date(); return [d.getFullYear(), d.getMonth() + 1, d.getDate()]; }
+    case 'startTmr': return Math.floor(Date.now() / 1000);
+    case 'isClockOn': return 1;
     case 'getKey': { const k = S.run ? S.run.lastKey : 0; if (S.run) S.run.lastKey = 0; return k; }
   }
+  if (v in COLORS_CE) return COLORS_CE[v][1];
   if (v in STATVARS) { const x = S.statVars[v]; if (x === undefined) err('UNDEFINED'); return x; }
   if (v in WINVARS) return S.win[WINVARS[v]];
   err('SYNTAX');
@@ -983,6 +994,21 @@ function lazyVar(n) { if (!n || n.k !== 'v') err('SYNTAX'); return n.v; }
 
 let ydepth = 0;
 function callFn(name, args, env) {
+  if (name === 'piecewise(') {
+    if (args.length < 2) err('ARGUMENT');
+    for (let k = 0; k + 1 < args.length; k += 2) if (num(ev(args[k + 1], env)) !== 0) return ev(args[k], env);
+    if (args.length % 2 === 1) return ev(args[args.length - 1], env);
+    err('DOMAIN');
+  }
+  if (name === 'solve(') {
+    need(args, 3, 4);
+    const vname = lazyVar(args[1]), g = num(ev(args[2], env));
+    const f = t => { try { const r = ev(args[0], { ...env, [vname]: t }); return typeof r === 'number' ? r : NaN; } catch (e) { return NaN; } };
+    let lo = -1e99, hi = 1e99;
+    if (args[3]) { const b = ev(args[3], env); if (!Array.isArray(b) || b.length !== 2) err('DATA TYPE'); lo = b[0]; hi = b[1]; }
+    for (let span = 1; span <= 1e12; span *= 10) { try { return findRoot(f, Math.max(lo, g - span), Math.min(hi, g + span), g); } catch (e) { /* widen */ } }
+    err('NO SIGN CHNG');
+  }
   // functions that take an unevaluated expression
   if (name === 'nDeriv(' || name === 'fnInt(' || name === 'fMin(' || name === 'fMax(' || name === 'Σ(' || name === 'seq(') {
     const vname = lazyVar(args[1]);
@@ -1032,6 +1058,15 @@ function listFn(name, a) {
   const many = (n, f) => { if (!isInt(n) || n < 1 || n > 999) err('DOMAIN'); return Array.from({ length: Math.round(n) }, f); };
   switch (name) {
     case 'rand(': need(a, 1); return many(num(a[0]), () => Math.random());
+    case 'randIntNoRep(': {
+      need(a, 2, 3); const lo = Math.round(num(a[0])), hi = Math.round(num(a[1])); if (hi < lo || hi - lo > 998) err('DOMAIN');
+      const pool = Array.from({ length: hi - lo + 1 }, (_, k) => lo + k);
+      for (let k = pool.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [pool[k], pool[j]] = [pool[j], pool[k]]; }
+      return a[2] !== undefined ? pool.slice(0, Math.max(1, Math.min(pool.length, Math.round(num(a[2]))))) : pool;
+    }
+    case 'binompdf(': if (a.length === 2) { const n = Math.round(num(a[0])); return Array.from({ length: n + 1 }, (_, x) => binompdf(n, a[1], x)); } return undefined;
+    case 'binomcdf(': if (a.length === 2) { const n = Math.round(num(a[0])); let acc = 0; return Array.from({ length: n + 1 }, (_, x) => Math.min(1, acc += binompdf(n, a[1], x))); } return undefined;
+    case 'timeCnv(': { need(a, 1); let t = Math.floor(num(a[0])); const d = Math.floor(t / 86400); t -= d * 86400; const h = Math.floor(t / 3600); t -= h * 3600; return [d, h, Math.floor(t / 60), t % 60]; }
     case 'randInt(': if (a.length === 3) return many(num(a[2]), () => scalarFn('randInt(', [a[0], a[1]])); return undefined;
     case 'randNorm(': if (a.length === 3) return many(num(a[2]), () => scalarFn('randNorm(', [a[0], a[1]])); return undefined;
     case 'randBin(': if (a.length === 3) return many(num(a[2]), () => scalarFn('randBin(', [a[0], a[1]])); return undefined;
@@ -1091,6 +1126,22 @@ function scalarFn(name, a) {
     case 'remainder(': need(a, 2); if (a[1] === 0) err('DIVIDE BY 0'); return a[0] - a[1] * Math.floor(a[0] / a[1]);
     case 'randInt(': { need(a, 2); if (!isInt(a[0]) || !isInt(a[1])) err('DOMAIN'); const lo = Math.min(a[0], a[1]), hi = Math.max(a[0], a[1]); return Math.round(lo) + Math.floor(Math.random() * (Math.round(hi) - Math.round(lo) + 1)); }
     case 'not(': one(); return x === 0 ? 1 : 0;
+    case 'checkTmr(': need(a, 1); return Math.floor(Date.now() / 1000) - a[0];
+    case 'dayOfWk(': { need(a, 3); const d = new Date(a[0], a[1] - 1, a[2]); if (isNaN(d)) err('DOMAIN'); return d.getDay() + 1; }
+    case 'dbd(': {
+      need(a, 2);
+      const dt = v => { const mm = Math.floor(v), frac = Math.round((v - mm) * 10000), dd = Math.floor(frac / 100), yy = frac % 100; return Date.UTC(yy < 50 ? 2000 + yy : 1900 + yy, mm - 1, dd); };
+      return Math.round((dt(a[1]) - dt(a[0])) / 86400000);
+    }
+    case 'invBinom(': { need(a, 3); const n = Math.round(a[1]); let acc = 0; for (let x = 0; x <= n; x++) { acc += binompdf(n, a[2], x); if (acc >= a[0] - 1e-12) return x; } return n; }
+    case 'bal(': case 'ΣPrn(': case 'ΣInt(': {
+      // amortization from the TVM values
+      const T = FIN, i = tvmRate(T), G = T.begin ? 1 : 0;
+      const sched = upto => { let b = T.PV, prn = [0], intr = [0]; for (let k = 1; k <= upto; k++) { const I = (k === 1 && G) ? 0 : Math.round(-i * b * 100) / 100; const nb = b - I + T.PMT; intr.push(I); prn.push(nb - b); b = nb; } return { b, prn, intr }; };
+      if (name === 'bal(') { need(a, 1, 2); return sched(Math.round(a[0])).b; }
+      need(a, 2, 3); const A = Math.round(a[0]), B = Math.round(a[1]); if (A < 1 || B < A) err('DOMAIN');
+      const sc = sched(B); return sumOf((name === 'ΣPrn(' ? sc.prn : sc.intr).slice(A, B + 1));
+    }
     case '►Nom(': need(a, 2); return 100 * a[1] * (Math.pow(1 + a[0] / 100, 1 / a[1]) - 1);
     case '►Eff(': need(a, 2); return 100 * (Math.pow(1 + a[0] / 100 / a[1], a[1]) - 1);
     case 'R►Pr(': need(a, 2); return Math.hypot(a[0], a[1]);
@@ -1300,8 +1351,24 @@ function runLine(toks) {
    STAT commands: sorting, 1/2-Var Stats, regressions
    ================================================================= */
 const REGS = ['LinReg(ax+b) ', 'QuadReg ', 'CubicReg ', 'QuartReg ', 'LinReg(a+bx) ', 'LnReg ', 'ExpReg ', 'PwrReg '];
+const SETCMD = {
+  'Radian': () => { S.mode.angle = 0; }, 'Degree': () => { S.mode.angle = 1; },
+  'Normal': () => { S.mode.notation = 0; }, 'Sci': () => { S.mode.notation = 1; }, 'Eng': () => { S.mode.notation = 2; }, 'Float': () => { S.mode.fix = -1; },
+  'Func': () => { S.mode.graph = 0; }, 'Param': () => { S.mode.graph = 1; }, 'Polar': () => { S.mode.graph = 2; }, 'Seq': () => { S.mode.graph = 3; },
+  'Real': () => { S.mode.cx = 0; }, 'a+bi': () => { S.mode.cx = 1; }, 're^θi': () => { S.mode.cx = 2; },
+  'MathPrint': () => setMathPrint(true), 'Classic': () => setMathPrint(false),
+  'Full': () => { S.mode.split = 0; setArea(); }, 'Horiz': () => { S.mode.split = 1; setArea(); }, 'G-T': () => { S.mode.split = 2; setArea(); },
+  'Connected': () => { S.mode.line = 0; }, 'Thick': () => { S.mode.line = 0; }, 'Thin': () => { S.mode.line = 1; }, 'Dot': () => { S.mode.line = 2; },
+  'Sequential': () => {}, 'Simul': () => {}, 'ExprOn': () => {}, 'ExprOff': () => {}, 'DiagnosticOn': () => {}, 'DiagnosticOff': () => {},
+  'AxesOn': () => { S.fmt.axes = 0; }, 'AxesOff': () => { S.fmt.axes = 1; },
+  'GridOff': () => { S.fmt.grid = 0; }, 'GridDot': () => { S.fmt.grid = 1; }, 'GridLine': () => { S.fmt.grid = 2; },
+  'CoordOn': () => { S.fmt.coord = 0; }, 'CoordOff': () => { S.fmt.coord = 1; }, 'LabelOn': () => { S.fmt.label = 1; }, 'LabelOff': () => { S.fmt.label = 0; },
+  'ClrAllLists': () => { S.lists = [[], [], [], [], [], []]; }, 'ClrTable': () => {}, 'ClrHome': () => { S.hist = []; },
+};
+const ZOOMCMD = { ZStandard: 'std', ZDecimal: 'dec', ZSquare: 'square', ZTrig: 'trig', ZInteger: 'int', ZoomFit: 'fit', ZoomStat: 'stat', ZPrevious: 'prev' };
+const ARGCMDS = ['Fix ', 'FnOn ', 'FnOff ', 'PlotsOn ', 'PlotsOff ', 'GraphColor(', 'TextColor(', 'Equ►String(', 'String►Equ(', 'ShadeNorm(', 'Shade_t(', 'Shadeχ²(', 'ShadeF('];
 const DRAWCMDS = ['StorePic ', 'RecallPic ', 'StoreGDB ', 'RecallGDB ', 'ClrDraw', 'Line(', 'Horizontal ', 'Vertical ', 'Tangent(', 'DrawF ', 'Shade(', 'DrawInv ', 'Circle(', 'Text(', 'Pt-On(', 'Pt-Off(', 'Pt-Change(', 'Pxl-On(', 'Pxl-Off(', 'Pxl-Change('];
-const COMMANDS = new Set([...DRAWCMDS, 'Matr►list(', 'List►matr(', 'SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
+const COMMANDS = new Set([...Object.keys(SETCMD), ...Object.keys(ZOOMCMD), ...ARGCMDS, ...DRAWCMDS, 'Matr►list(', 'List►matr(', 'SortA(', 'SortD(', 'ClrList ', 'Fill(', '1-Var Stats ', '2-Var Stats ', 'ANOVA(', 'Med-Med ', ...REGS]);
 function splitArgs(t) {
   const out = []; let cur = [], d = 0, str = false;
   for (const x of t) {
@@ -1610,9 +1677,15 @@ const TESTS = [
     } },
 ];
 function drawCommand(cmd, args) {
+  // a trailing colour argument (BLUE, RED, ... = 10–24) is accepted on every drawing command
+  const BASE = { 'Line(': 4, 'Horizontal ': 1, 'Vertical ': 1, 'Circle(': 3, 'Tangent(': 2, 'DrawF ': 1, 'DrawInv ': 1, 'Shade(': 2, 'Text(': 3, 'Pt-On(': 2, 'Pt-Off(': 2, 'Pt-Change(': 2, 'Pxl-On(': 2, 'Pxl-Off(': 2, 'Pxl-Change(': 2 };
+  let color = null;
+  if (BASE[cmd] !== undefined && args.length > BASE[cmd]) {
+    try { const cv = evalTokens(args[args.length - 1]); const col = cv >= 10 && cv <= 24 ? colorOf(cv) : null; if (col) { color = col; args = args.slice(0, -1); } } catch (e) { /* not a colour */ }
+  }
   const N = k => evalTokens(args[k]);
   const want = (lo, hi = lo) => { if (args.length < lo || args.length > hi) err('ARGUMENT'); };
-  const D = S.draws;
+  const D0 = S.draws, D = { get length() { return D0.length; }, set length(v) { D0.length = v; }, push: (...items) => D0.push(...items.map(it => (color ? { ...it, color } : it))) };
   const slot = () => { want(1); const n = N(0); if (!isInt(n) || n < 0 || n > 9) err('DOMAIN'); return Math.round(n); };
   switch (cmd) {
     case 'StorePic ': S.pics[slot()] = JSON.parse(JSON.stringify(D)); return 'Done';
@@ -1633,7 +1706,7 @@ function drawCommand(cmd, args) {
     case 'DrawF ': want(1); D.push({ k: 'f', e: args[0] }); break;
     case 'DrawInv ': want(1); D.push({ k: 'inv', e: args[0] }); break;
     case 'Shade(': want(2, 4); D.push({ k: 'shade', lo: args[0], hi: args[1], a: args[2] ? N(2) : null, b: args[3] ? N(3) : null }); break;
-    case 'Text(': { want(3); const v = evalAny(args[2]); D.push({ k: 'text', r: N(0), c: N(1), t: showVal(v) }); break; }
+    case 'Text(': { want(3); const v = evalAny(args[2]); D.push({ k: 'text', r: N(0), c: N(1), t: showVal(v), color: color || S.textColor || null }); break; }
     case 'Pt-On(': case 'Pt-Off(': case 'Pt-Change(': want(2, 3); D.push({ k: 'pt', x: N(0), y: N(1), mark: args[2] ? N(2) : 1, mode: cmd }); break;
     case 'Pxl-On(': case 'Pxl-Off(': case 'Pxl-Change(': want(2); D.push({ k: 'pxl', r: N(0), c: N(1), mode: cmd }); break;
   }
@@ -1643,7 +1716,7 @@ function drawCommand(cmd, args) {
 function renderDraws(c) {
   const blue = '#1a5fd8';
   for (const d of S.draws) {
-    c.strokeStyle = c.fillStyle = d.erase || (d.mode && d.mode.endsWith('Off(')) ? '#fff' : blue;
+    c.strokeStyle = c.fillStyle = d.erase || (d.mode && d.mode.endsWith('Off(')) ? '#fff' : (d.color || blue);
     c.lineWidth = d.erase ? 3 : 1.5;
     const fx = (toks, x) => { try { return num(ev(edAst({ t: toks }), { X: x })); } catch (e) { return NaN; } };
     switch (d.k) {
@@ -1668,7 +1741,25 @@ function renderDraws(c) {
         for (let px = pa; px <= pb; px++) { const x = pxToX(px), lo = fx(d.lo, x), hi = fx(d.hi, x); if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) { c.moveTo(px, clampPy(yToPy(lo))); c.lineTo(px, clampPy(yToPy(hi))); } }
         c.lineWidth = 1.2; c.stroke(); c.globalAlpha = 1; break;
       }
-      case 'text': c.fillStyle = '#111'; c.font = '12px system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(d.t, d.c * (GW / 265), SB + d.r * (GH / 165)); break;
+      case 'dist': {
+        const v = d.v, lo = v[0], hi = v[1];
+        const pdf = d.cmd === 'ShadeNorm(' ? x => { const sg = v[3] ?? 1, z = (x - (v[2] ?? 0)) / sg; return Math.exp(-z * z / 2) / (sg * Math.sqrt(2 * Math.PI)); }
+          : d.cmd === 'Shade_t(' ? x => tpdf(x, v[2]) : d.cmd === 'Shadeχ²(' ? x => chipdf(x, v[2]) : x => fpdf(x, v[2], v[3]);
+        let area; try { area = d.cmd === 'ShadeNorm(' ? normcdf(lo, hi, v[2] ?? 0, v[3] ?? 1) : d.cmd === 'Shade_t(' ? tcdf(lo, hi, v[2]) : d.cmd === 'Shadeχ²(' ? chicdf(lo, hi, v[2]) : fcdf(lo, hi, v[2], v[3]); } catch (e) { area = NaN; }
+        const y0 = clampPy(yToPy(0));
+        c.save(); c.globalAlpha = 0.35; c.beginPath();
+        const pa = Math.max(0, xToPx(lo)), pb = Math.min(GW - 1, xToPx(hi));
+        c.moveTo(pa, y0); for (let px = pa; px <= pb; px++) { let y; try { y = pdf(pxToX(px)); } catch (e) { y = 0; } c.lineTo(px, clampPy(yToPy(y))); } c.lineTo(pb, y0); c.closePath(); c.fill(); c.restore();
+        c.lineWidth = 1.6; c.beginPath(); let on = false;
+        for (let px = 0; px < GW; px++) { let y; try { y = pdf(pxToX(px)); } catch (e) { y = NaN; } if (!Number.isFinite(y)) { on = false; continue; } const py = clampPy(yToPy(y)); on ? c.lineTo(px, py) : c.moveTo(px, py); on = true; }
+        c.stroke();
+        c.font = '12px system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+        const lbl = 'Area=' + fmtNum(area, 6) + '   low=' + fmtNum(lo, 6) + '   up=' + fmtNum(hi, 6);
+        c.fillStyle = '#fff'; c.fillRect(0, GB - 18, GW, 18);
+        c.fillStyle = '#111'; c.fillText(lbl, 4, GB - 5);
+        break;
+      }
+      case 'text': c.fillStyle = d.color || '#111'; c.font = '12px system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(d.t, d.c * (GW / 265), SB + d.r * (GH / 165)); break;
       case 'pt': { const X = xToPx(d.x), Y = yToPy(d.y); if (d.mark === 2) c.strokeRect(X - 2.5, Y - 2.5, 5, 5); else if (d.mark === 3) { c.beginPath(); c.moveTo(X - 3, Y); c.lineTo(X + 3, Y); c.moveTo(X, Y - 3); c.lineTo(X, Y + 3); c.stroke(); } else c.fillRect(X - 1.5, Y - 1.5, 3, 3); break; }
       case 'pxl': c.fillRect(d.c * (GW / 265), SB + d.r * (GH / 165), 1.5, 1.5); break;
     }
@@ -1704,8 +1795,29 @@ function medMed(xs, ys, f) {
 function runCommand(cmd, rest) {
   if (cmd.endsWith('(') && rest[rest.length - 1] === ')') rest = rest.slice(0, -1);
   const args = splitArgs(rest);
+  if (SETCMD[cmd]) { if (args.length) err('SYNTAX'); SETCMD[cmd](); S.graphDirty = true; return 'Done'; }
+  if (ZOOMCMD[cmd]) { if (ZOOMCMD[cmd] === 'stat') zoomStat(); else zoom(ZOOMCMD[cmd]); return { graph: true }; }
   if (DRAWCMDS.includes(cmd)) return drawCommand(cmd, args);
   switch (cmd) {
+    case 'Fix ': { if (args.length !== 1) err('ARGUMENT'); const n = evalTokens(args[0]); if (!isInt(n) || n < 0 || n > 9) err('DOMAIN'); S.mode.fix = Math.round(n); return 'Done'; }
+    case 'FnOn ': case 'FnOff ': {
+      const on = cmd === 'FnOn ', idx = args.length ? args.map(a => { const n = evalTokens(a); if (!isInt(n) || n < 0 || n > 9) err('DOMAIN'); return n === 0 ? 9 : Math.round(n) - 1; }) : S.Y.map((_, i) => i);
+      idx.forEach(i => { S.Y[i].on = on; }); S.graphDirty = true; return 'Done';
+    }
+    case 'PlotsOn ': case 'PlotsOff ': {
+      const on = cmd === 'PlotsOn ', idx = args.length ? args.map(a => { const n = evalTokens(a); if (!isInt(n) || n < 1 || n > 3) err('DOMAIN'); return Math.round(n) - 1; }) : [0, 1, 2];
+      idx.forEach(i => { S.plots[i].on = on; }); S.graphDirty = true; return 'Done';
+    }
+    case 'GraphColor(': { if (args.length !== 2) err('ARGUMENT'); const n = evalTokens(args[0]), col = colorOf(evalTokens(args[1])); if (!isInt(n) || n < 0 || n > 9 || !col) err('DOMAIN'); S.Y[n === 0 ? 9 : n - 1].color = col; S.graphDirty = true; return 'Done'; }
+    case 'TextColor(': { if (args.length !== 1) err('ARGUMENT'); const col = colorOf(evalTokens(args[0])); if (!col) err('DOMAIN'); S.textColor = col; return 'Done'; }
+    case 'Equ►String(': { if (args.length !== 2 || !isY(args[0][0]) || !isStr(args[1][0])) err('SYNTAX'); S.strs[args[1][0][3]] = S.Y[YLAB.indexOf(args[0][0][1])].ed.str(); return 'Done'; }
+    case 'String►Equ(': { if (args.length !== 2 || !isY(args[1][0])) err('SYNTAX'); const v = evalAny(args[0]); if (typeof v !== 'string') err('DATA TYPE'); const y = S.Y[YLAB.indexOf(args[1][0][1])]; y.ed.set(strTokens(v)); y.ast = undefined; S.graphDirty = true; return 'Done'; }
+    case 'ShadeNorm(': case 'Shade_t(': case 'Shadeχ²(': case 'ShadeF(': {
+      const v = args.map(a => evalTokens(a));
+      const want = { 'ShadeNorm(': [2, 4], 'Shade_t(': [3, 3], 'Shadeχ²(': [3, 3], 'ShadeF(': [4, 4] }[cmd];
+      if (v.length < want[0] || v.length > want[1]) err('ARGUMENT');
+      S.draws.push({ k: 'dist', cmd, v }); S.graphDirty = true; return { graph: true };
+    }
     case 'SortA(': case 'SortD(': {
       if (!args.length) err('SYNTAX');
       const refs = args.map(argListRef), key = S.lists[refs[0]];
@@ -2086,6 +2198,18 @@ function drawHome() {
   if (cr >= 0 && cr < ROWS) drawCursor(cr, cp % COLS, ch[cp]);
 }
 
+function openStyleDialog(y, label) {
+  const cols = Object.entries(COLORS_CE), back = S.yeq.sel;
+  openAppForm({
+    title: label + ' COLOR / LINE', hint: '◂ ▸ change   OK: ENTER',
+    rows: [
+      { label: 'Color:', spin: true, opts: cols.map(c => c[0]), get: () => Math.max(0, cols.findIndex(c => c[1][0] === y.color)), set: v => { y.color = cols[v][1][0]; S.graphDirty = true; } },
+      { label: 'Line:', spin: true, opts: STYLE_NAMES, get: () => y.style ?? (S.mode.line === 1 ? 5 : S.mode.line === 2 ? 4 : 0), set: v => { y.style = v; S.graphDirty = true; } },
+      { act: 'OK', label: '' },
+    ],
+    solve() { openYeq(); S.yeq.sel = back; S.yeq.onStyle = true; },
+  });
+}
 function drawStyleIcon(e, x, cy, cur) {
   const y = e.owner;
   if (cur && S.blink) { ctx.fillStyle = '#111'; ctx.fillRect(x, cy - 9, CW, 18); }
@@ -3303,6 +3427,14 @@ function drawAppForm() {
     const i = A.scroll + k, r = rows[i]; if (!r) break;
     const row = k + 1, here = i === A.sel;
     drawStr(r.label, row, 0); let c = cells(r.label).length;
+    if (r.spin) {
+      const name = r.opts[r.get()];
+      drawStr('◂', row, c + 1, { color: '#2b4f8a' });
+      drawStr(name, row, c + 3, here ? { bg: '#111' } : {});
+      drawStr('▸', row, c + 4 + cells(name).length, { color: '#2b4f8a' });
+      if (r.label === 'Color:') { ctx.fillStyle = COLORS_CE[name][0]; ctx.fillRect(cellX(c + 6 + cells(name).length), rowY(row) + 4, 26, LH - 8); ctx.strokeStyle = '#8a909a'; ctx.strokeRect(cellX(c + 6 + cells(name).length) + 0.5, rowY(row) + 4.5, 26, LH - 8); }
+      continue;
+    }
     if (r.opts) { c++; r.opts.forEach((o, j) => { drawStr(o, row, c, j === r.get() ? (here ? { bg: '#111' } : { bg: '#2b6cc4' }) : {}); c += cells(o).length + 1; }); continue; }
     if (r.act) { drawStr(r.act, row, 0, here ? { bg: '#111' } : { color: '#2b4f8a' }); continue; }
     if (here && A.ed) { const ch = cells(A.ed.str()); drawStr(ch.join(''), row, c); drawCursor(row, c + A.ed.curChar(), ch[A.ed.c]); }
@@ -3468,7 +3600,7 @@ function simSolve(Q) {
 function simCommit(Q) {
   if (!Q.ed) return true;
   if (!Q.ed.t.length) { Q.ed = null; return true; }
-  try { const v = evalTokens(Q.ed.t); Q.m[Q.r][Q.c === Q.nunk ? SIMN : Q.c] = v; Q.ed = null; return true; }
+  try { const v = evalTokens(Q.ed.t); if (Q.stage === 'pcoef') S.poly.c[Q.pr] = v; else Q.m[Q.r][Q.c === Q.nunk ? SIMN : Q.c] = v; Q.ed = null; return true; }
   catch (e) { if (!(e instanceof CalcError)) throw e; const keep = Q.ed.t.slice(); showError(e.type, () => { S.screen = 'simul'; Q.ed = new Ed(keep); }); return false; }
 }
 function drawSimul() {
@@ -3549,6 +3681,55 @@ function drawSimul() {
     } else apBar(['MAIN', 'MODE', 'SYSM', 'STO▸', 'SOLN']);
     return;
   }
+  if (Q.stage === 'pmode') {
+    apTitle('POLY ROOT FINDER MODE');
+    const rows = [
+      { label: 'ORDER', opts: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], cur: S.poly.deg - 1 },
+      { label: '', opts: ['REAL', 'a+bi', 're^(θi)'], cur: S.mode.cx },
+      { label: '', opts: ['NORMAL', 'SCI', 'ENG'], cur: S.mode.notation },
+      { label: '', opts: ['FLOAT', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], cur: S.mode.fix + 1 },
+      { label: '', opts: ['RADIAN', 'DEGREE'], cur: S.mode.angle },
+    ];
+    rows.forEach((rw, i) => {
+      const y = SB + 42 + i * 26; let x = 6;
+      if (rw.label) x += apText(rw.label, x, y) + 8;
+      rw.opts.forEach((o, j) => { const here = i === Q.mr && j === Q.mc; x += apText(o, x, y, here && S.blink ? { bg: '#111' } : j === rw.cur ? { bg: '#2b6cc4' } : {}) + 7; });
+    });
+    apBar(['MAIN', '', '', '', 'NEXT']);
+    return;
+  }
+  if (Q.stage === 'pcoef') {
+    const P = S.poly, n = P.deg;
+    apTitle('POLY ROOT FINDER');
+    let eq = ''; for (let k = n; k >= 0; k--) eq += 'a' + k + (k > 1 ? 'x^' + k : k === 1 ? 'x' : '') + (k ? '+' : '=0');
+    ctx.font = '12px "DejaVu Sans Mono", Menlo, monospace'; ctx.fillStyle = '#2b4f8a'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(eq, 6, SB + 34, W - 12);
+    const vis = 7; Q.pr = Math.min(Q.pr || 0, n);
+    if (Q.pr < (Q.poff || 0)) Q.poff = Q.pr; if (Q.pr >= (Q.poff || 0) + vis) Q.poff = Q.pr - vis + 1;
+    for (let k = 0; k < vis; k++) {
+      const i = (Q.poff || 0) + k; if (i > n) break;
+      const y = SB + 56 + k * 20, here = i === Q.pr;
+      const w = apText('a' + (n - i) + '=', 8, y, here && !Q.ed ? { bg: '#2b6cc4' } : {});
+      const txt = here && Q.ed ? Q.ed.str() : fmtNum(P.c[i]);
+      apText(txt, 12 + w, y);
+      if (here && Q.ed && S.blink) { ctx.font = APF; ctx.fillStyle = '#111'; ctx.fillRect(12 + w + ctx.measureText(linearize(Q.ed.t.slice(0, Q.ed.c)).join('')).width, y - 12, 2, 15); }
+    }
+    apBar(['MAIN', 'MODE', 'CLEAR', 'LOAD', 'SOLVE']);
+    return;
+  }
+  if (Q.stage === 'psol') {
+    apTitle('SOLUTION');
+    const L = Q.proots, vis = 8;
+    Q.solScroll = Math.max(0, Math.min(Q.solScroll, L.length - vis));
+    L.slice(Q.solScroll, Q.solScroll + vis).forEach((z, k) => {
+      const i = k + Q.solScroll;
+      const txt = isC(z) ? (S.mode.cx === 0 ? 'nonreal' : showVal(z, Q.pfrac)) : showVal(z, Q.pfrac);
+      apText('x' + (i + 1) + '=' + txt, 8, SB + 40 + k * 20);
+    });
+    if (Q.solScroll + vis < L.length) apText('↓', W - 12, H - 26, { color: '#2b4f8a' });
+    apBar(['MAIN', 'MODE', 'COEFF', 'STO▸', 'F◄►D']);
+    return;
+  }
   // solution
   apTitle('SOLUTION');
   const L = Q.sol.lines, vis = 8;
@@ -3563,7 +3744,7 @@ function simKey(a) {
   if (Q.page) { Q.page = null; return true; }
   if (Q.stage === 'menu') {
     const pick = k => {
-      if (k === 0) { openPoly(); return; }
+      if (k === 0) { S.poly = S.poly || { deg: 2, c: Array(11).fill(0) }; Q.stage = 'pmode'; Q.mr = 0; Q.mc = S.poly.deg - 1; Q.ed = null; return; }
       if (k === 1) { Q.stage = 'mode'; Q.mr = 0; Q.mc = Q.neq - 2; return; }
       if (k === 2) { Q.page = 'about'; return; }
       if (k === 3) { Q.page = 'polyhelp'; return; }
@@ -3575,6 +3756,67 @@ function simKey(a) {
     else if (a === 'ENTER') pick(Q.menuSel);
     else if (/^i:[1-6]$/.test(a)) { Q.menuSel = +a[2] - 1; pick(Q.menuSel); }
     else if (a === 'CLEAR') goHome();
+    return true;
+  }
+  const polySolve = () => {
+    const P = S.poly, co = P.c.slice(0, P.deg + 1);
+    if (co[0] === 0) { showError('ARGUMENT', () => { S.screen = 'simul'; }); return; }
+    Q.proots = polyRoots(co); Q.stage = 'psol'; Q.solScroll = 0; Q.pfrac = false;
+  };
+  if (Q.stage === 'pmode' || Q.stage === 'pcoef' || Q.stage === 'psol') {
+    const Fp = { YEQ: 0, WINDOW: 1, ZOOM: 2, TRACE: 3, GRAPH: 4 }[a];
+    const P = S.poly;
+    if (Fp !== undefined) {
+      if (Q.stage === 'pcoef' && !simCommit(Q)) return true;
+      if (Fp === 0) { Q.stage = 'menu'; Q.ed = null; return true; }
+      if (Q.stage === 'pmode') { if (Fp === 4) { Q.stage = 'pcoef'; Q.pr = 0; Q.poff = 0; } return true; }
+      if (Fp === 1) { Q.stage = 'pmode'; Q.mr = 0; Q.mc = P.deg - 1; Q.ed = null; return true; }
+      if (Q.stage === 'pcoef') {
+        if (Fp === 2) { P.c.fill(0); Q.pr = 0; toast('Coefficients cleared', 900); }
+        if (Fp === 3) openMenu({ keepScreen: true, tabs: mkTabs([{ title: 'LOAD LIST', items: [0, 1, 2, 3, 4, 5].map(i => ({ label: 'L' + (i + 1) + (S.lists[i].length ? ' (' + S.lists[i].length + ')' : ''), dim: !S.lists[i].length, act: () => { S.screen = 'simul'; const l = S.lists[i]; if (l.length < 2 || l.length > 11) { toast('List must have 2–11 coefficients', 1800); return; } P.deg = l.length - 1; P.c.fill(0); l.forEach((v, k) => { P.c[k] = v; }); Q.pr = 0; } })) }]) });
+        if (Fp === 4) polySolve();
+        return true;
+      }
+      if (Fp === 2) Q.stage = 'pcoef';
+      if (Fp === 3) { const re = Q.proots.filter(z => !isC(z)); if (re.length) { S.lists[0] = re.slice(); toast('Real roots stored to L1', 1500); } else toast('No real roots to store', 1500); }
+      if (Fp === 4) Q.pfrac = !Q.pfrac;
+      return true;
+    }
+    if (Q.stage === 'pmode') {
+      const lens = [10, 3, 3, 11, 2], cur = () => [P.deg - 1, S.mode.cx, S.mode.notation, S.mode.fix + 1, S.mode.angle][Q.mr];
+      switch (a) {
+        case 'UP': Q.mr = (Q.mr + 4) % 5; Q.mc = cur(); return true;
+        case 'DOWN': Q.mr = (Q.mr + 1) % 5; Q.mc = cur(); return true;
+        case 'LEFT': Q.mc = (Q.mc + lens[Q.mr] - 1) % lens[Q.mr]; return true;
+        case 'RIGHT': Q.mc = (Q.mc + 1) % lens[Q.mr]; return true;
+        case 'ENTER': if (Q.mr === 0) P.deg = Q.mc + 1; else if (Q.mr === 1) S.mode.cx = Q.mc; else if (Q.mr === 2) S.mode.notation = Q.mc; else if (Q.mr === 3) S.mode.fix = Q.mc - 1; else S.mode.angle = Q.mc; return true;
+        case 'CLEAR': Q.stage = 'menu'; return true;
+      }
+      return true;
+    }
+    if (Q.stage === 'pcoef') {
+      if (Q.ed) {
+        switch (a) {
+          case 'LEFT': Q.ed.left(); return true;
+          case 'RIGHT': Q.ed.right(); return true;
+          case 'CLEAR': Q.ed.clear(); return true;
+          case 'DEL': Q.ed.del(); return true;
+          case 'BS': Q.ed.bs(); return true;
+        }
+        if (a.startsWith('i:')) return false;
+        if (!simCommit(Q)) return true;
+        if (a === 'ENTER') { if (Q.pr < P.deg) Q.pr++; return true; }
+      }
+      switch (a) {
+        case 'UP': if (Q.pr > 0) Q.pr--; return true;
+        case 'DOWN': case 'ENTER': if (Q.pr < P.deg) Q.pr++; return true;
+        case 'CLEAR': Q.ed = new Ed([]); return true;
+        case 'SOLVE': polySolve(); return true;
+        case 'LEFT': case 'RIGHT': case 'DEL': case 'BS': return true;
+      }
+      return false;
+    }
+    if (a === 'UP') Q.solScroll--; else if (a === 'DOWN') Q.solScroll++; else if (a === 'CLEAR') Q.stage = 'pcoef';
     return true;
   }
   // soft keys
@@ -3662,7 +3904,7 @@ function simLoad(k) {
    ================================================================= */
 function stopProgram() { if (S.run && S.run.active) { S.run.active = false; if (S.prun) { S.prun.input = null; S.prun.pause = null; S.prun.menu = null; } } }
 function goHome() { closeGraphState(); if (S.prun && S.prun.menu) stopProgram(); S.screen = 'home'; }
-function closeGraphState() { const g = S.g; g.mode = 'none'; g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; }
+function closeGraphState() { const g = S.g; g.pen = null; g.mode = 'none'; g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; }
 function showError(type, gotoFn) { S.err = { type, sel: 0, gotoFn, canGoto: !!gotoFn }; S.screen = 'error'; }
 
 function setMathPrint(on) {
@@ -3834,6 +4076,10 @@ function zoom(type) {
   }
   openGraph();
 }
+function startPen() {
+  closeGraphState(); openGraph(); if (S.screen !== 'graph') return;
+  const g = S.g; g.mode = 'free'; freeHome(g); g.pen = { down: false }; g.info = 'Pen: ENTER = pen down/up';
+}
 function zoomEnter() {
   const g = S.g, z = g.zoom, w = S.win, X = pxToX(g.cx), Y = pyToY(g.cy);
   if (z.type === 'box') {
@@ -3949,10 +4195,10 @@ const T = (tok, label = tok) => ({ label, tok });
 function mkTabs(tabs) { return tabs.map(t => ({ title: t.title, items: t.items.map(it => ({ label: it.label, act: it.act || menuInsert(it.tok), dim: it.dim })) })); }
 const MENUS = {
   MATH: () => ({ tabs: mkTabs([
-    { title: 'MATH', items: [T('►Frac'), T('►Dec'), T('³'), T('³√('), T('ˣ√', 'ˣ√'), T('fMin('), T('fMax('), T('nDeriv('), T('fnInt('), T('Σ('), T('logBASE('), { label: 'Solver…', act: openSolver }] },
+    { title: 'MATH', items: [T('►Frac'), T('►Dec'), T('³'), T('³√('), T('ˣ√', 'ˣ√'), T('fMin('), T('fMax('), T('nDeriv('), T('fnInt('), T('Σ('), T('logBASE('), T('piecewise('), { label: 'Numeric Solver…', act: openSolver }, T('solve(')] },
     { title: 'NUM', items: [T('abs('), T('round('), T('iPart('), T('fPart('), T('int('), T('min('), T('max('), T('lcm('), T('gcd('), T('remainder(')] },
     { title: 'CPX', items: [T('conj('), T('real('), T('imag('), T('angle('), T('abs('), T('►Rect'), T('►Polar')] },
-    { title: 'PROB', items: [T('rand'), T(' nPr ', 'nPr'), T(' nCr ', 'nCr'), T('!'), T('randInt('), T('randNorm('), T('randBin(')] },
+    { title: 'PROB', items: [T('rand'), T(' nPr ', 'nPr'), T(' nCr ', 'nCr'), T('!'), T('randInt('), T('randNorm('), T('randBin('), T('randIntNoRep(')] },
   ]) }),
   TEST: () => ({ tabs: mkTabs([
     { title: 'TEST', items: [T('='), T('≠'), T('>'), T('≥'), T('<'), T('≤')] },
@@ -3964,9 +4210,11 @@ const MENUS = {
     { title: 'MATH', items: [T('det('), T('ᵀ'), T('dim('), T('Fill('), T('identity('), T('randM('), T('augment('), T('Matr►list('), T('List►matr('), T('cumSum('), T('ref('), T('rref('), T('rowSwap('), T('row+('), T('*row('), T('*row+(')] },
     { title: 'EDIT', items: 'ABCDEFGHIJ'.split('').map(k => ({ label: '[' + k + ']' + (S.mats[k] ? ' ' + S.mats[k].length + '×' + S.mats[k][0].length : ''), act: () => openMedit(k) })) },
   ]) }),
-  DISTR: () => ({ tabs: mkTabs([{ title: 'DISTR', items: [T('normalpdf('), T('normalcdf('), T('invNorm('), T('invT('), T('tpdf('), T('tcdf('), T('χ²pdf('), T('χ²cdf('), T('Fpdf('), T('Fcdf('), T('binompdf('), T('binomcdf('), T('poissonpdf('), T('poissoncdf('), T('geometpdf('), T('geometcdf(')] }]) }),
+  DISTR: () => ({ tabs: mkTabs([{ title: 'DISTR', items: [T('normalpdf('), T('normalcdf('), T('invNorm('), T('invT('), T('tpdf('), T('tcdf('), T('χ²pdf('), T('χ²cdf('), T('Fpdf('), T('Fcdf('), T('binompdf('), T('binomcdf('), T('poissonpdf('), T('poissoncdf('), T('geometpdf('), T('geometcdf('), T('invBinom(')] },
+    { title: 'DRAW', items: [T('ShadeNorm('), T('Shade_t('), T('Shadeχ²('), T('ShadeF(')] }]) }),
   VARS: () => ({ tabs: mkTabs([
     { title: 'VARS', items: Object.keys(WINVARS).map(k => T(k)) },
+    { title: 'COLOR', items: Object.keys(COLORS_CE).map(k => T(k)) },
     { title: 'Y-VARS', items: YLAB.map(d => T('Y' + d)) },
     { title: 'STRING', items: '1234567890'.split('').map(d => T('Str' + d)) },
     { title: 'STAT', items: [...Object.keys(STATVARS).map(k => T(k, k.trim())), { label: 'RegEQ', act: () => { S.screen = S.menu.ret; if (!S.regEQ) { toast('Run a regression first'); return; } S.regEQ.forEach(insertTok); } }] },
@@ -4034,15 +4282,30 @@ const MENUS = {
     { label: 'PlySmlt2', act: openPlySmlt },
   ] }]) }),
   FINANCE: () => ({ tabs: mkTabs([{ title: 'CALC', items: [
-    { label: 'TVM Solver…', act: openTVM }, T('tvm_Pmt'), T('tvm_I%'), T('tvm_PV'), T('tvm_N'), T('tvm_FV'), T('npv('), T('irr('), T('►Nom('), T('►Eff('),
+    { label: 'TVM Solver…', act: openTVM }, T('tvm_Pmt'), T('tvm_I%'), T('tvm_PV'), T('tvm_N'), T('tvm_FV'), T('npv('), T('irr('), T('bal('), T('ΣPrn('), T('ΣInt('), T('►Nom('), T('►Eff('), T('dbd('),
   ] }]) }),
   DRAW: () => ({ home: true, tabs: mkTabs([
-    { title: 'DRAW', items: [T('ClrDraw'), T('Line('), T('Horizontal ', 'Horizontal'), T('Vertical ', 'Vertical'), T('Tangent('), T('DrawF ', 'DrawF'), T('Shade('), T('DrawInv ', 'DrawInv'), T('Circle('), T('Text(')] },
+    { title: 'DRAW', items: [T('ClrDraw'), T('Line('), T('Horizontal ', 'Horizontal'), T('Vertical ', 'Vertical'), T('Tangent('), T('DrawF ', 'DrawF'), T('Shade('), T('DrawInv ', 'DrawInv'), T('Circle('), T('Text('), { label: 'Pen', act: startPen }] },
     { title: 'POINTS', items: [T('Pt-On('), T('Pt-Off('), T('Pt-Change('), T('Pxl-On('), T('Pxl-Off('), T('Pxl-Change(')] },
     { title: 'STO', items: [T('StorePic ', 'StorePic'), T('RecallPic ', 'RecallPic'), T('StoreGDB ', 'StoreGDB'), T('RecallGDB ', 'RecallGDB')] },
   ]) }),
+  PMODE: () => ({ tabs: mkTabs([{ title: 'MODE', items: ['Normal', 'Sci', 'Eng', 'Float', 'Fix ', 'Radian', 'Degree', 'Func', 'Param', 'Polar', 'Seq', 'Thick', 'Thin', 'Dot', 'Real', 'a+bi', 're^θi', 'Full', 'Horiz', 'G-T', 'MathPrint', 'Classic'].map(t => T(t, t.trim())) }]) }),
+  PZOOM: () => ({ tabs: mkTabs([{ title: 'ZOOM', items: Object.keys(ZOOMCMD).map(t => T(t)) }]) }),
+  PFORMAT: () => ({ tabs: mkTabs([{ title: 'FORMAT', items: ['CoordOn', 'CoordOff', 'GridOff', 'GridDot', 'GridLine', 'AxesOn', 'AxesOff', 'LabelOff', 'LabelOn', 'ExprOn', 'ExprOff', 'FnOn ', 'FnOff ', 'PlotsOn ', 'PlotsOff ', 'GraphColor(', 'TextColor('].map(t => T(t, t.trim())) }]) }),
+  MEMMGMT: () => {
+    const cat = (title, names, del) => ({ title, items: names.length ? names.map(n => ({ label: n, act: () => openMenu({ tabs: mkTabs([{ title: 'DELETE ' + n + '?', items: [{ label: 'No', act: () => openMenu(MENUS.MEMMGMT()) }, { label: 'Yes', act: () => { del(n); toast(n + ' deleted', 1200); openMenu(MENUS.MEMMGMT()); } }] }]) }) })) : [{ label: '(empty)', dim: true, act: () => {} }] });
+    return { home: true, tabs: [
+      cat('PRGM', Object.keys(S.progs).sort(), n => { delete S.progs[n]; }),
+      cat('LIST', [0, 1, 2, 3, 4, 5].filter(i => S.lists[i].length).map(i => 'L' + (i + 1)), n => { S.lists[+n[1] - 1] = []; }),
+      cat('MATRX', Object.keys(S.mats).sort().map(k => '[' + k + ']'), n => { delete S.mats[n[1]]; }),
+      cat('STR', Object.keys(S.strs).sort().map(k => 'Str' + k), n => { delete S.strs[n[3]]; }),
+      cat('PIC', [...Object.keys(S.pics).map(k => 'Pic' + k), ...Object.keys(S.gdbs).map(k => 'GDB' + k)], n => { if (n.startsWith('Pic')) delete S.pics[n[3]]; else delete S.gdbs[n[3]]; }),
+    ] };
+  },
   MEM: () => ({ tabs: mkTabs([{ title: 'MEMORY', items: [
-    { label: 'About', act: () => { goHome(); toast('Web graphing calculator, CE style. Real-number mode, function graphing.', 3500); } },
+    { label: 'About', act: () => { goHome(); toast('Web graphing calculator, CE style. Everything is stored in this browser.', 3500); } },
+    { label: 'Mem Management/Delete…', act: () => openMenu(MENUS.MEMMGMT()) },
+    { label: 'ClrAllLists', act: () => { S.lists = [[], [], [], [], [], []]; goHome(); toast('Done'); } },
     { label: 'Clear Home', act: () => { goHome(); S.hist = []; } },
     { label: 'Clear Entries', act: () => { goHome(); S.entries = []; toast('Done'); } },
     { label: 'Reset Defaults', act: () => { resetAll(); goHome(); toast('Defaults Set'); } },
@@ -4081,7 +4344,7 @@ function editorFor(screen) {
   if (screen === 'medit') return S.medit.ed;
   if (screen === 'pedit') return S.pedit.lines[S.pedit.row];
   if (screen === 'appform') return S.af.ed;
-  if (screen === 'simul') return S.sim && S.sim.stage === 'mat' ? S.sim.ed : null;
+  if (screen === 'simul') return S.sim && (S.sim.stage === 'mat' || S.sim.stage === 'pcoef') ? S.sim.ed : null;
   if (screen === 'table') return S.table.ed || null;
   if (screen === 'pnew') return S.pnew.ed;
   if (screen === 'prun') return S.prun.input && S.prun.input.ed;
@@ -4107,7 +4370,7 @@ function insertTok(tok) {
   if (S.screen === 'solver' && S.solver.stage === 1 && !S.solver.ed && solverRows()[S.solver.sel] !== 'bound') S.solver.ed = new Ed([]);
   if (S.screen === 'pnew' && !/^[A-Z0-9θ]$/.test(tok)) return;
   if (S.screen === 'table') { if (!(S.tbl.indAsk && S.table.col === 0)) return; if (!S.table.ed) S.table.ed = new Ed([]); }
-  if (S.screen === 'simul') { const Q = simState(); if (Q.stage !== 'mat') return; if (!Q.ed) Q.ed = new Ed([]); }
+  if (S.screen === 'simul') { const Q = simState(); if (Q.stage !== 'mat' && Q.stage !== 'pcoef') return; if (!Q.ed) Q.ed = new Ed([]); }
   if (S.screen === 'appform') { const r = afRows()[S.af.sel]; if (!r || r.opts || r.act) return; if (!S.af.ed) S.af.ed = new Ed([]); }
   if (S.screen === 'prun' && !(S.prun.input)) { if (S.run && S.run.active) return; goHome(); }
   const ed = editorFor(S.screen);
@@ -4194,7 +4457,7 @@ const HANDLERS = {
     switch (a) {
       case 'UP': if (S.mode.mp && !st.onEq && tplVertical(ed, -1)) return true; if (st.sel > 0) go(st.sel - 1); else { st.plot = 0; st.onEq = false; } return true;
       case 'DOWN': case 'ENTER':
-        if (a === 'ENTER' && st.onStyle) { y.style = ((y.style ?? (S.mode.line === 1 ? 5 : S.mode.line === 2 ? 4 : 0)) + 1) % STYLES.length; S.graphDirty = true; toast(STYLE_NAMES[y.style], 900); return true; }
+        if (a === 'ENTER' && st.onStyle) { openStyleDialog(y, ent.label); return true; }
         if (a === 'ENTER' && st.onEq) { y.on = !y.on; S.graphDirty = true; return true; }
         if (a === 'DOWN' && S.mode.mp && !st.onEq && tplVertical(ed, 1)) return true;
         if (st.sel < E.length - 1) go(st.sel + 1); return true;
@@ -4297,12 +4560,16 @@ const HANDLERS = {
     const arrows = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
     if (g.mode === 'none' && arrows.includes(a)) { g.mode = 'free'; freeHome(g); return true; }
     if (g.mode === 'free') {
+      if (g.pen && g.pen.down && arrows.includes(a)) {
+        const x0 = pxToX(g.cx), y0 = pyToY(g.cy);
+        setTimeout(() => { S.draws.push({ k: 'line', a: [x0, y0, pxToX(g.cx), pyToY(g.cy)] }); S.graphDirty = true; redraw(); }, 0);
+      }
       switch (a) {
         case 'UP': g.ky = Math.max(0, g.ky - 1); freeSync(g); return true;
         case 'DOWN': g.ky = Math.min(TIH, g.ky + 1); freeSync(g); return true;
         case 'LEFT': g.kx = Math.max(0, g.kx - 1); freeSync(g); return true;
         case 'RIGHT': g.kx = Math.min(TIW, g.kx + 1); freeSync(g); return true;
-        case 'ENTER': if (g.zoom) zoomEnter(); return true;
+        case 'ENTER': if (g.pen) { g.pen.down = !g.pen.down; g.info = g.pen.down ? 'Pen down' : 'Pen up'; return true; } if (g.zoom) zoomEnter(); return true;
         case 'CLEAR': case 'BS': if (g.zoom) { g.zoom = null; } g.mode = 'none'; return true;
       }
     }
@@ -4456,6 +4723,9 @@ const HANDLERS = {
       case 'BS': if (ed.c === 0 && P.row > 0) { const prev = L[P.row - 1], k = prev.t.length; prev.t.push(...ed.t); L.splice(P.row, 1); P.row--; prev.c = k; } else ed.bs(); return true;
       case 'CLEAR': ed.clear(); return true;
       case 'INS': S.insMode = true; return true;
+      case 'MODE': openMenu(MENUS.PMODE()); return true;
+      case 'ZOOM': openMenu(MENUS.PZOOM()); return true;
+      case 'FORMAT': openMenu(MENUS.PFORMAT()); return true;
     }
     if (!a.startsWith('i:')) savePedit();
     return false;
