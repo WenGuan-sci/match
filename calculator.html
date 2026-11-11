@@ -1889,13 +1889,13 @@ function menuIdx(i) { return i < 9 ? String(i + 1) : i === 9 ? '0' : String.from
 
 function drawStatus() {
   const g = ctx.createLinearGradient(0, 0, 0, SB);
-  g.addColorStop(0, '#f3f5f8'); g.addColorStop(1, '#dfe3ea');
+  g.addColorStop(0, '#6a6f78'); g.addColorStop(1, '#4b5059');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, SB);
-  ctx.fillStyle = '#b8bec8'; ctx.fillRect(0, SB - 1, W, 1);
-  ctx.font = SMALL; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#2b4f8a';
+  ctx.fillStyle = '#2f333a'; ctx.fillRect(0, SB - 1, W, 1);
+  ctx.font = SMALL; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
   const m = S.mode;
   const txt = [['NORMAL', 'SCI', 'ENG'][m.notation], m.fix < 0 ? 'FLOAT' : 'FIX' + m.fix, 'AUTO', ['REAL', 'a+bi', 're^θi'][m.cx], m.angle ? 'DEGREE' : 'RADIAN', m.mp ? 'MP' : 'CL'].join(' ');
-  ctx.fillText(txt, 5, SB / 2 + 0.5);
+  ctx.fillText(S.screen === 'simul' ? 'PLYSMLT2 APP' : txt, 5, SB / 2 + 0.5);
   let x = W - 30;
   if (S.second || S.alpha) {
     const label = S.second ? '2ND' : S.alphaLock ? 'A-LOCK' : 'ALPHA';
@@ -1906,8 +1906,8 @@ function drawStatus() {
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(label, x + w / 2, SB / 2 + 0.5);
   }
   // battery
-  ctx.strokeStyle = '#3a4250'; ctx.lineWidth = 1; ctx.strokeRect(W - 24.5, 6.5, 17, 8); ctx.fillStyle = '#3a4250'; ctx.fillRect(W - 7, 8.5, 2, 4);
-  ctx.fillStyle = '#2fae4a'; ctx.fillRect(W - 23, 8, 14, 5);
+  ctx.strokeStyle = '#f1f3f6'; ctx.lineWidth = 1; ctx.strokeRect(W - 24.5, 6.5, 17, 8); ctx.fillStyle = '#f1f3f6'; ctx.fillRect(W - 7, 8.5, 2, 4);
+  ctx.fillStyle = '#55d66f'; ctx.fillRect(W - 23, 8, 14, 5);
 }
 function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 
@@ -3645,13 +3645,34 @@ function plyModeRows(Q, poly) {
   ]);
 }
 function plyModeDraw(Q, poly) {
-  apTitle(poly ? 'POLY ROOT FINDER MODE' : 'SIMULT EQN SOLVER MODE');
+  const title = poly ? 'POLY ROOT FINDER MODE' : 'SIMULT EQN SOLVER MODE';
+  drawStr(title, 0, Math.floor((COLS - title.length) / 2));
   plyModeRows(Q, poly).forEach((rw, i) => {
-    const y = SB + 40 + i * 23; let x = 6;
-    if (rw.label) x += apText(rw.label, x, y) + 8;
-    rw.opts.forEach((o, j) => { const here = i === Q.mr && j === Q.mc; x += apText(o, x, y, here && S.blink ? { bg: '#111' } : j === rw.get() ? { bg: '#2b6cc4' } : {}) + 7; });
+    let c = 0;
+    if (rw.label) { drawStr(rw.label, i + 1, 0); c = rw.label.length + 1; }
+    rw.opts.forEach((o, j) => {
+      const here = i === Q.mr && j === Q.mc, n = cells(o).length;
+      drawStr(o, i + 1, c, here && S.blink ? { bg: '#111' } : j === rw.get() ? { bg: '#2b6cc4' } : {});
+      c += n + 1;
+    });
   });
   apBar(['MAIN', 'HELP', '', '', 'NEXT']);
+}
+// a₃x³+a₂x²+a₁x+a₀=0 with real subscripts and superscripts, shrunk to fit one line
+function plyEquation(n, y) {
+  const big = 15, small = 10.5, parts = [];
+  for (let k = n; k >= 0; k--) {
+    parts.push(['a', big, 0], [String(k), small, 4]);
+    if (k >= 1) parts.push(['x', big, 0]);
+    if (k >= 2) parts.push([String(k), small, -6]);
+    parts.push([k ? '+' : '=0', big, 0]);
+  }
+  const F = sz => `${sz}px "DejaVu Sans", "Segoe UI", system-ui, sans-serif`;
+  let total = 0; for (const [t, sz] of parts) { ctx.font = F(sz); total += ctx.measureText(t).width; }
+  const sc = Math.min(1, (W - 10) / total);
+  ctx.save(); ctx.translate(5, y); ctx.scale(sc, 1); ctx.fillStyle = '#111'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  let x = 0; for (const [t, sz, dy] of parts) { ctx.font = F(sz); ctx.fillText(t, x, dy); x += ctx.measureText(t).width; }
+  ctx.restore();
 }
 function plyModeKey(Q, poly, a) {
   const rows = plyModeRows(Q, poly), n = rows.length;
@@ -3705,11 +3726,11 @@ function drawSimul() {
     return;
   }
   if (Q.stage === 'menu') {
-    apTitle('MAIN MENU');
+    drawStr('MAIN MENU', 0, Math.floor((COLS - 9) / 2));
     SIM_MENU.forEach((l, k) => {
-      const y = SB + 42 + k * 24, sel = k === Q.menuSel;
-      const w = apText((k + 1) + ':', 8, y, sel ? { bg: '#111' } : {});
-      apText(l, 8 + w + 4, y);
+      const sel = k === Q.menuSel;
+      drawCh(String(k + 1), k + 1, 0, sel ? { bg: '#111' } : {}); drawCh(':', k + 1, 1, sel ? { bg: '#111' } : {});
+      drawStr(l, k + 1, 2);
     });
     return;
   }
@@ -3755,36 +3776,33 @@ function drawSimul() {
   }
   if (Q.stage === 'pmode') { plyModeDraw(Q, true); return; }
   if (Q.stage === 'pcoef') {
-    const P = S.poly, n = P.deg;
-    apTitle('POLY ROOT FINDER');
-    let eq = ''; for (let k = n; k >= 0; k--) eq += 'a' + k + (k > 1 ? 'x^' + k : k === 1 ? 'x' : '') + (k ? '+' : '=0');
-    ctx.font = '12px "DejaVu Sans Mono", Menlo, monospace'; ctx.fillStyle = '#2b4f8a'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(eq, 6, SB + 34, W - 12);
-    const vis = 7; Q.pr = Math.min(Q.pr || 0, n);
+    const P = S.poly, n = P.deg, vis = 8;
+    plyEquation(n, SB + 16);
+    Q.pr = Math.min(Q.pr || 0, n);
     if (Q.pr < (Q.poff || 0)) Q.poff = Q.pr; if (Q.pr >= (Q.poff || 0) + vis) Q.poff = Q.pr - vis + 1;
     for (let k = 0; k < vis; k++) {
       const i = (Q.poff || 0) + k; if (i > n) break;
-      const y = SB + 56 + k * 20, here = i === Q.pr;
-      const w = apText('a' + (n - i) + '=', 8, y, here && !Q.ed ? { bg: '#2b6cc4' } : {});
-      const txt = here && Q.ed ? Q.ed.str() : fmtNum(P.c[i]);
-      apText(txt, 12 + w, y);
-      if (here && Q.ed && S.blink) { ctx.font = APF; ctx.fillStyle = '#111'; ctx.fillRect(12 + w + ctx.measureText(linearize(Q.ed.t.slice(0, Q.ed.c)).join('')).width, y - 12, 2, 15); }
+      const row = k + 1, here = i === Q.pr, lab = 'a' + subN(n - i) + '=', c0 = 1 + cells(lab).length;
+      drawStr(lab, row, 1);
+      if (here && Q.ed) { const ch = cells(Q.ed.str()); drawStr(ch.join(''), row, c0); drawCursor(row, c0 + Q.ed.curChar(), ch[Q.ed.c]); }
+      else { const v = fmtNum(P.c[i]); drawStr(v, row, c0); if (here) drawCursor(row, c0, cells(v)[0]); }
     }
+    if ((Q.poff || 0) > 0) drawCh('↑', 1, COLS - 1); if ((Q.poff || 0) + vis <= n) drawCh('↓', vis, COLS - 1);
     apBar(['MAIN', 'MODE', 'CLEAR', 'LOAD', 'SOLVE']);
     return;
   }
   if (Q.stage === 'psol') {
-    apTitle('SOLUTION');
     const L = Q.proots, vis = 8;
+    plyEquation(S.poly.deg, SB + 16);
     Q.solScroll = Math.max(0, Math.min(Q.solScroll, L.length - vis));
     L.slice(Q.solScroll, Q.solScroll + vis).forEach((z, k) => {
       const i = k + Q.solScroll;
       const fr = Q.pfrac ? Q.dec : !Q.dec;
       const txt = isC(z) ? (S.mode.cx === 0 ? 'NONREAL' : showVal(z, fr)) : showVal(z, fr);
-      apText('x' + subN(i + 1) + '=' + txt, 8, SB + 40 + k * 20);
+      drawStr('x' + subN(i + 1) + '=' + txt, k + 1, 1);
     });
-    if (Q.solScroll + vis < L.length) apText('↓', W - 12, H - 26, { color: '#2b4f8a' });
-    apBar(['MAIN', 'MODE', 'COEFF', 'STO▸', 'F◄►D']);
+    if (Q.solScroll > 0) drawCh('↑', 1, COLS - 1); if (Q.solScroll + vis < L.length) drawCh('↓', vis, COLS - 1);
+    apBar(['MAIN', 'MODE', 'COEFF', 'STO', 'F◄►D']);
     return;
   }
   // solution
@@ -3835,7 +3853,19 @@ function simKey(a) {
         return true;
       }
       if (Fp === 2) Q.stage = 'pcoef';
-      if (Fp === 3) { const re = Q.proots.filter(z => !isC(z)); if (re.length) { S.lists[0] = re.slice(); toast('Real roots stored to L1', 1500); } else toast('No real roots to store', 1500); }
+      if (Fp === 3) {
+        const lists = [0, 1, 2, 3, 4, 5].map(i => 'L' + (i + 1));
+        const pickList = (title, vals) => openMenu({ keepScreen: true, tabs: mkTabs([{ title, items: lists.map((l, i) => ({ label: l, act: () => { S.screen = 'simul'; S.lists[i] = vals.slice(); toast('Stored to ' + l, 1300); } })) }]) });
+        openMenu({ keepScreen: true, tabs: mkTabs([{ title: 'STORE', items: [
+          { label: 'Coefficients to list', act: () => pickList('COEFF TO', P.c.slice(0, P.deg + 1)) },
+          { label: 'Solutions to list', act: () => { const re = Q.proots.filter(z => !isC(z)); if (!re.length) { S.screen = 'simul'; toast('No real solutions to store', 1500); return; } pickList('SOLUTIONS TO', re); } },
+          { label: 'Polynomial to Y=', act: () => openMenu({ keepScreen: true, tabs: mkTabs([{ title: 'POLY TO', items: YLAB.map((d, i) => ({ label: 'Y' + d, act: () => {
+            S.screen = 'simul'; const tk = [];
+            for (let k = P.deg; k >= 0; k--) { const c = P.c[P.deg - k]; if (c === 0 && P.deg > 0) continue; if (tk.length) tk.push('+'); tk.push(...numTokens(c)); if (k === 1) tk.push('X'); else if (k === 2) tk.push('X', '²'); else if (k > 2) tk.push('X', '^', ...String(k)); }
+            S.Y[i].ed.set(tk.length ? tk : ['0']); S.Y[i].on = true; S.Y[i].ast = undefined; S.graphDirty = true; toast('Stored in Y' + d, 1300);
+          } })) }]) }) },
+        ] }]) });
+      }
       if (Fp === 4) Q.pfrac = !Q.pfrac;
       return true;
     }
