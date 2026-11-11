@@ -32,8 +32,8 @@ Peach, Cloud, Honey (cube), Mint Ice, Strawberry (with seeds), Lemon Star (star 
 - **DISTR:** normal, t, χ², F, binomial, Poisson, geometric, invBinom, plus the DRAW tab (ShadeNorm, Shade_t, Shadeχ², ShadeF)
 - **Matrices**, **complex numbers**, **strings** (Str0–Str9), **piecewise(**, **solve(**, numeric **Solver**
 - **PRGM:** program editor and TI-BASIC interpreter with control flow, I/O, getKey, subprograms, mode/zoom/format commands, clock and timer functions
-- **APPS:** CabriJr (geometry sketchpad), CelSheet (spreadsheet with formulas and ranges), Conics, Finance (TVM, amortization, npv, irr), Inequalz (inequality graphing with intersection shading), Periodic (118 elements), PlySmlt2 (polynomial roots and simultaneous equations), Prob Sim (coins, dice, marbles, spinner, cards, random numbers), SciTools (sig-fig calculator, unit converter, constants, vector calculator), Transfrm (live A/B/C/D coefficients). EasyData and Hub open but report that no sensor or hub is connected.
+- **APPS** (same list and order as a stock CE, minus the two that need hardware): Finance, CabriJr, CelSheet, Conics, Inequalz, Periodic, PlySmlt2, Prob Sim, SciTools, Transfrm.
 - **MEM:** Mem Management/Delete, ClrAllLists, Reset; **CATALOG** with every command
 - Everything you enter is saved in your browser
 
-Not included: cable linking, exam mode, custom-named lists, Catalog Help, `Select(` and `Manual-Fit`. The apps are working browser versions with the core tools of each, not every menu of the originals; EasyData and Hub need hardware that a web page does not have.
+Not included: cable linking, exam mode, EasyData and Hub (they need a sensor or hub), custom-named lists, Catalog Help, `Select(` and `Manual-Fit`. The apps follow the real ones' menus and screens for their core tools; they are not pixel copies and some sub-menus are missing.

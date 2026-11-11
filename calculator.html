@@ -2282,18 +2282,25 @@ function drawYeq() {
 function drawForm() {
   const f = S.form;
   drawStr(f.title, 0, 0, { color: '#2b4f8a' });
+  const visF = ROWS - 1;
+  f.scroll = Math.max(0, Math.min(f.scroll || 0, Math.max(0, f.fields.length - visF)));
+  if (f.sel < f.scroll) f.scroll = f.sel;
+  if (f.sel >= f.scroll + visF) f.scroll = f.sel - visF + 1;
+  if (f.scroll > 0) drawCh('↑', 1, COLS - 1, { color: '#2b4f8a' });
+  if (f.scroll + visF < f.fields.length) drawCh('↓', ROWS - 1, COLS - 1, { color: '#2b4f8a' });
   f.fields.forEach((fd, i) => {
-    const row = i + 1, lab = fd[0] + '=';
+    const row = i + 1 - f.scroll, lab = fd[0] + '=';
+    if (row < 1 || row > visF) return;
     drawStr(lab, row, 1);
     if (i === f.sel) {
       const ch = [...f.ed.str()], cp = f.ed.curChar(), start = lab.length + 1;
       const avail = COLS - start; const off = Math.max(0, cp - avail + 1);
       drawStr(ch.slice(off, off + avail).join(''), row, start);
       drawCursor(row, start + cp - off, ch[cp]);
-    } else drawStr(fmtNum(f.obj[fd[1]]), row, lab.length + 1);
+    } else drawStr(fmtNum(num((fd[2] || f.obj)[fd[1]] || 0)), row, lab.length + 1);
   });
   const extra = f.extra ? f.extra() : [];
-  extra.forEach((t, k) => drawStr(t, f.fields.length + 1 + k, 1, { color: '#6b7380' }));
+  extra.forEach((t, k) => { const row = f.fields.length + 1 + k - f.scroll; if (row >= 1 && row < ROWS) drawStr(t, row, 1, { color: '#6b7380' }); });
 }
 
 function drawOpts() {
@@ -2459,8 +2466,15 @@ function renderGraphBuffer() {
     c.strokeStyle = c.fillStyle = S.Y[i].color; c.lineWidth = sty === 1 ? 3 : sty === 5 ? 1.1 : sty === 0 ? 2 : lw; c.lineJoin = 'round'; c.lineCap = 'round';
     const rel = relOf(i);
     if (rel && !S.ineqMode) {
-      c.save(); c.globalAlpha = 0.2;
-      for (let px = 0; px <= GW - 1; px += step) { const y = evalY(i, pxToX(px)); if (!Number.isFinite(y)) continue; const py = Math.max(SB, Math.min(GB, yToPy(y))); if (rel >= 3) c.fillRect(px, SB, step, py - SB); else c.fillRect(px, py, step, GB - py); }
+      const kk = activeFns().filter(q => relOf(q)).indexOf(i) % 3;
+      c.save(); c.globalAlpha = 0.6;
+      for (let px = 0; px <= GW - 1; px++) {
+        const y = evalY(i, pxToX(px)); if (!Number.isFinite(y)) continue;
+        const py = Math.round(Math.max(SB, Math.min(GB, yToPy(y)))), top = rel >= 3 ? SB : py, bot = rel >= 3 ? py : GB;
+        if (kk === 0) { if (px % 5 === 0) c.fillRect(px, top, 1, bot - top); }
+        else if (kk === 1) { for (let yy = Math.ceil(top / 5) * 5; yy < bot; yy += 5) c.fillRect(px, yy, 1, 1); }
+        else { for (let yy = top + ((5 - ((px + top) % 5)) % 5); yy < bot; yy += 5) c.fillRect(px, yy, 1, 1); }
+      }
       c.restore();
     }
     if (rel === 1 || rel === 3) c.setLineDash([5, 4]); else c.setLineDash([]);
@@ -2604,11 +2618,19 @@ function drawGraph() {
     else if (S.fmt.coord === 0 || g.result || g.calc) lines.push([{ t: 'X=' + fmtNum(x, 7) }, { t: 'Y=' + (Number.isFinite(y) ? fmtNum(y, 7) : ''), at: 160 }]);
   }
   if (transActive()) {
-    const cf = transCoefs(), rows = [...cf.map(l => l + '=' + fmtNum(num(S.vars[l] || 0), 7)), 'Step=' + fmtNum(S.transStep, 6)];
+    const cf = transCoefs(), rows = cf.map(l => l + '=' + fmtNum(num(S.vars[l] || 0), 7));
     S.transSel = Math.min(S.transSel, rows.length - 1);
     ctx.font = SANS; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     rows.forEach((t, k) => { const y = SB + 16 + k * 17, w = ctx.measureText(t).width; ctx.fillStyle = k === S.transSel ? '#2b6cc4' : 'rgba(255,255,255,.88)'; ctx.fillRect(2, y - 13, w + 8, 17); ctx.fillStyle = k === S.transSel ? '#fff' : '#111'; ctx.fillText(t, 6, y); });
   }
+  if (g.mode === 'poi' && g.poi) {
+    const P = g.poi.pts[g.poi.k], px = xToPx(P.x), py = yToPy(P.y);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeRect(Math.round(px) - 3.5, Math.round(py) - 3.5, 8, 8);
+    ctx.strokeStyle = S.blink ? '#d8232c' : '#111'; ctx.lineWidth = 2; ctx.strokeRect(Math.round(px) - 3.5, Math.round(py) - 3.5, 8, 8);
+    ctx.font = SANS; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; const lab = 'Y' + YLAB[P.a] + '∩Y' + YLAB[P.b];
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(2, SB + 2, ctx.measureText(lab).width + 6, 18); ctx.fillStyle = '#111'; ctx.fillText(lab, 5, SB + 4);
+    lines.push([{ t: 'X=' + fmtNum(P.x, 7) }, { t: 'Y=' + fmtNum(P.y, 7), at: 160 }]);
+  } else if (ineqActive() && g.mode === 'none' && !g.calc && !transActive()) apBar(['Shades', 'PoI-Trace', '?', '', '']);
   if (g.info) lines.push([{ t: g.info }]);
   if (g.zoom && g.mode === 'free') lines.unshift([{ t: g.zoom.type === 'box' ? (g.zoom.p1 ? 'Move to 2nd corner, ENTER' : 'Move to 1st corner, ENTER') : 'Move to new center, ENTER', color: '#2b4f8a' }]);
   if (lines.length) overlayText(lines);
@@ -3601,12 +3623,48 @@ function simState() {
   return S.sim || (S.sim = { stage: 'menu', menuSel: 0, neq: 3, nunk: 3, mr: 0, mc: 0, r: 0, c: 0, off: 0, coff: 0, ed: null, m: Array.from({ length: SIMN }, () => Array(SIMN + 1).fill(0)), sol: null, solScroll: 0, showRref: false, page: null });
 }
 function openPlySmlt() { closeGraphState(); const Q = simState(); Q.stage = 'menu'; Q.ed = null; S.screen = 'simul'; }
-const SIM_MENU = ['POLY ROOT FINDER', 'SIMULT EQN SOLVER', 'ABOUT', 'POLY ROOT FINDER HELP', 'SIMULT EQN SOLVER HELP', 'QUIT APP'];
+const SIM_MENU = ['POLYNOMIAL ROOT FINDER', 'SIMULTANEOUS EQN SOLVER', 'ABOUT', 'POLY ROOT FINDER HELP', 'SIMULT EQN SOLVER HELP', 'QUIT APP'];
 const SIM_PAGES = {
   about: ['PlySmlt2 (web version)', '', 'Polynomial root finder and', 'simultaneous equation solver.', '', 'Press any key.'],
   polyhelp: ['POLY ROOT FINDER', '', 'Pick the order, then enter', 'the coefficients a(n)...a0.', 'ALPHA+ENTER solves.', 'Complex roots show as a+bi.', '', 'Press any key.'],
   simhelp: ['SIMULT EQN SOLVER', '', 'MODE: choose how many', 'equations and unknowns.', 'NEXT: enter the system', 'matrix [A | b] cell by cell.', 'SOLVE finds X1, X2, ...', 'RREF shows the reduced', 'matrix. STO▸ saves the', 'solution to L1.', '', 'Press any key.'],
 };
+const subN = n => String(n).replace(/[0-9]/g, d => '₀₁₂₃₄₅₆₇₈₉'[d]);
+// AUTO shows exact fractions when the value is rational, DEC always shows decimals
+const plyNum = v => (simState().dec ? fmtNum(v) : toFrac(v));
+function plyModeRows(Q, poly) {
+  const nums = ['2', '3', '4', '5', '6', '7', '8', '9', '10'];
+  const head = poly
+    ? [{ label: 'ORDER', opts: ['1', ...nums], get: () => S.poly.deg - 1, set: v => { S.poly.deg = v + 1; } }, { label: '', opts: ['REAL', 'a+bi', 're^(θi)'], get: () => S.mode.cx, set: v => { S.mode.cx = v; } }]
+    : [{ label: 'EQUATIONS', opts: nums, get: () => Q.neq - 2, set: v => { Q.neq = v + 2; } }, { label: 'UNKNOWNS', opts: nums, get: () => Q.nunk - 2, set: v => { Q.nunk = v + 2; } }];
+  return head.concat([
+    { label: '', opts: ['AUTO', 'DEC'], get: () => Q.dec ? 1 : 0, set: v => { Q.dec = v; } },
+    { label: '', opts: ['NORMAL', 'SCI', 'ENG'], get: () => S.mode.notation, set: v => { S.mode.notation = v; } },
+    { label: '', opts: ['FLOAT', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], get: () => S.mode.fix + 1, set: v => { S.mode.fix = v - 1; } },
+    { label: '', opts: ['RADIAN', 'DEGREE'], get: () => S.mode.angle, set: v => { S.mode.angle = v; } },
+  ]);
+}
+function plyModeDraw(Q, poly) {
+  apTitle(poly ? 'POLY ROOT FINDER MODE' : 'SIMULT EQN SOLVER MODE');
+  plyModeRows(Q, poly).forEach((rw, i) => {
+    const y = SB + 40 + i * 23; let x = 6;
+    if (rw.label) x += apText(rw.label, x, y) + 8;
+    rw.opts.forEach((o, j) => { const here = i === Q.mr && j === Q.mc; x += apText(o, x, y, here && S.blink ? { bg: '#111' } : j === rw.get() ? { bg: '#2b6cc4' } : {}) + 7; });
+  });
+  apBar(['MAIN', 'HELP', '', '', 'NEXT']);
+}
+function plyModeKey(Q, poly, a) {
+  const rows = plyModeRows(Q, poly), n = rows.length;
+  switch (a) {
+    case 'UP': Q.mr = (Q.mr + n - 1) % n; Q.mc = rows[Q.mr].get(); break;
+    case 'DOWN': Q.mr = (Q.mr + 1) % n; Q.mc = rows[Q.mr].get(); break;
+    case 'LEFT': Q.mc = (Q.mc + rows[Q.mr].opts.length - 1) % rows[Q.mr].opts.length; break;
+    case 'RIGHT': Q.mc = (Q.mc + 1) % rows[Q.mr].opts.length; break;
+    case 'ENTER': rows[Q.mr].set(Q.mc); break;
+    case 'CLEAR': Q.stage = 'menu'; break;
+  }
+  return true;
+}
 function simMatrixRows(Q) { return Q.m.slice(0, Q.neq).map(r => r.slice(0, Q.nunk).concat([r[SIMN]])); }
 function simSolve(Q) {
   const n = Q.nunk, A = simMatrixRows(Q), R = rowReduce(A, n, true);
@@ -3615,21 +3673,21 @@ function simSolve(Q) {
   const pivots = []; R.forEach(r => { const j = r.slice(0, n).findIndex(x => x !== 0); if (j >= 0) pivots.push(j); });
   if (pivots.length === n) {
     const x = Array(n).fill(0); R.forEach(r => { const j = r.slice(0, n).findIndex(x2 => x2 !== 0); if (j >= 0) x[j] = r[n]; });
-    return { kind: 'one', x, lines: x.map((v, k) => 'X' + (k + 1) + '=' + fmtNum(v)) };
+    return { kind: 'one', x, lines: x.map((v, k) => 'x' + subN(k + 1) + '=' + plyNum(v)) };
   }
   // infinitely many: write each pivot variable in terms of the free ones
   const free = [...Array(n).keys()].filter(j => !pivots.includes(j));
   const lines = ['INFINITE SOLUTIONS'];
   for (let j = 0; j < n; j++) {
-    if (free.includes(j)) { lines.push('X' + (j + 1) + '=X' + (j + 1)); continue; }
+    if (free.includes(j)) { lines.push('x' + subN(j + 1) + '=x' + subN(j + 1)); continue; }
     const r = R.find(row => row.slice(0, n).findIndex(x2 => x2 !== 0) === j);
-    let t = r[n] !== 0 || free.every(f => r[f] === 0) ? fmtNum(r[n]) : '';
+    let t = r[n] !== 0 || free.every(f => r[f] === 0) ? plyNum(r[n]) : '';
     for (const f of free) {
       const c = -r[f]; if (c === 0) continue;
-      const mag = Math.abs(c) === 1 ? '' : fmtNum(Math.abs(c));
-      t += (t ? (c < 0 ? '-' : '+') : (c < 0 ? '⁻' : '')) + mag + 'X' + (f + 1);
+      const mag = Math.abs(c) === 1 ? '' : plyNum(Math.abs(c));
+      t += (t ? (c < 0 ? '-' : '+') : (c < 0 ? '⁻' : '')) + mag + 'x' + subN(f + 1);
     }
-    lines.push('X' + (j + 1) + '=' + t);
+    lines.push('x' + subN(j + 1) + '=' + t);
   }
   return { kind: 'inf', lines };
 }
@@ -3655,29 +3713,7 @@ function drawSimul() {
     });
     return;
   }
-  if (Q.stage === 'mode') {
-    apTitle('SIMULT EQN SOLVER MODE');
-    const nums = ['2', '3', '4', '5', '6', '7', '8', '9', '10'];
-    const rows = [
-      { label: 'EQUATIONS', opts: nums, cur: Q.neq - 2 },
-      { label: 'UNKNOWNS', opts: nums, cur: Q.nunk - 2 },
-      { label: '', opts: ['NORMAL', 'SCI', 'ENG'], cur: S.mode.notation },
-      { label: '', opts: ['FLOAT', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], cur: S.mode.fix + 1 },
-      { label: '', opts: ['RADIAN', 'DEGREE'], cur: S.mode.angle },
-    ];
-    rows.forEach((rw, i) => {
-      const y = SB + 42 + i * 26;
-      let x = 6;
-      if (rw.label) x += apText(rw.label, x, y) + 8;
-      rw.opts.forEach((o, j) => {
-        const here = i === Q.mr && j === Q.mc;
-        const st = here && S.blink ? { bg: '#111' } : j === rw.cur ? { bg: '#2b6cc4' } : {};
-        x += apText(o, x, y, st) + 7;
-      });
-    });
-    apBar(['MAIN', 'MODE', '', '', 'NEXT']);
-    return;
-  }
+  if (Q.stage === 'mode') { plyModeDraw(Q, false); return; }
   if (Q.stage === 'mat' || (Q.stage === 'sol' && Q.showRref)) {
     const showR = Q.stage === 'sol';
     const rows = showR ? Q.rref : simMatrixRows(Q), nc = Q.nunk + 1;
@@ -3717,23 +3753,7 @@ function drawSimul() {
     } else apBar(['MAIN', 'MODE', 'SYSM', 'STO▸', 'SOLN']);
     return;
   }
-  if (Q.stage === 'pmode') {
-    apTitle('POLY ROOT FINDER MODE');
-    const rows = [
-      { label: 'ORDER', opts: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], cur: S.poly.deg - 1 },
-      { label: '', opts: ['REAL', 'a+bi', 're^(θi)'], cur: S.mode.cx },
-      { label: '', opts: ['NORMAL', 'SCI', 'ENG'], cur: S.mode.notation },
-      { label: '', opts: ['FLOAT', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], cur: S.mode.fix + 1 },
-      { label: '', opts: ['RADIAN', 'DEGREE'], cur: S.mode.angle },
-    ];
-    rows.forEach((rw, i) => {
-      const y = SB + 42 + i * 26; let x = 6;
-      if (rw.label) x += apText(rw.label, x, y) + 8;
-      rw.opts.forEach((o, j) => { const here = i === Q.mr && j === Q.mc; x += apText(o, x, y, here && S.blink ? { bg: '#111' } : j === rw.cur ? { bg: '#2b6cc4' } : {}) + 7; });
-    });
-    apBar(['MAIN', '', '', '', 'NEXT']);
-    return;
-  }
+  if (Q.stage === 'pmode') { plyModeDraw(Q, true); return; }
   if (Q.stage === 'pcoef') {
     const P = S.poly, n = P.deg;
     apTitle('POLY ROOT FINDER');
@@ -3759,8 +3779,9 @@ function drawSimul() {
     Q.solScroll = Math.max(0, Math.min(Q.solScroll, L.length - vis));
     L.slice(Q.solScroll, Q.solScroll + vis).forEach((z, k) => {
       const i = k + Q.solScroll;
-      const txt = isC(z) ? (S.mode.cx === 0 ? 'nonreal' : showVal(z, Q.pfrac)) : showVal(z, Q.pfrac);
-      apText('x' + (i + 1) + '=' + txt, 8, SB + 40 + k * 20);
+      const fr = Q.pfrac ? Q.dec : !Q.dec;
+      const txt = isC(z) ? (S.mode.cx === 0 ? 'NONREAL' : showVal(z, fr)) : showVal(z, fr);
+      apText('x' + subN(i + 1) + '=' + txt, 8, SB + 40 + k * 20);
     });
     if (Q.solScroll + vis < L.length) apText('↓', W - 12, H - 26, { color: '#2b4f8a' });
     apBar(['MAIN', 'MODE', 'COEFF', 'STO▸', 'F◄►D']);
@@ -3805,7 +3826,7 @@ function simKey(a) {
     if (Fp !== undefined) {
       if (Q.stage === 'pcoef' && !simCommit(Q)) return true;
       if (Fp === 0) { Q.stage = 'menu'; Q.ed = null; return true; }
-      if (Q.stage === 'pmode') { if (Fp === 4) { Q.stage = 'pcoef'; Q.pr = 0; Q.poff = 0; } return true; }
+      if (Q.stage === 'pmode') { if (Fp === 4) { Q.stage = 'pcoef'; Q.pr = 0; Q.poff = 0; } else if (Fp === 1) Q.page = 'polyhelp'; return true; }
       if (Fp === 1) { Q.stage = 'pmode'; Q.mr = 0; Q.mc = P.deg - 1; Q.ed = null; return true; }
       if (Q.stage === 'pcoef') {
         if (Fp === 2) { P.c.fill(0); Q.pr = 0; toast('Coefficients cleared', 900); }
@@ -3818,18 +3839,7 @@ function simKey(a) {
       if (Fp === 4) Q.pfrac = !Q.pfrac;
       return true;
     }
-    if (Q.stage === 'pmode') {
-      const lens = [10, 3, 3, 11, 2], cur = () => [P.deg - 1, S.mode.cx, S.mode.notation, S.mode.fix + 1, S.mode.angle][Q.mr];
-      switch (a) {
-        case 'UP': Q.mr = (Q.mr + 4) % 5; Q.mc = cur(); return true;
-        case 'DOWN': Q.mr = (Q.mr + 1) % 5; Q.mc = cur(); return true;
-        case 'LEFT': Q.mc = (Q.mc + lens[Q.mr] - 1) % lens[Q.mr]; return true;
-        case 'RIGHT': Q.mc = (Q.mc + 1) % lens[Q.mr]; return true;
-        case 'ENTER': if (Q.mr === 0) P.deg = Q.mc + 1; else if (Q.mr === 1) S.mode.cx = Q.mc; else if (Q.mr === 2) S.mode.notation = Q.mc; else if (Q.mr === 3) S.mode.fix = Q.mc - 1; else S.mode.angle = Q.mc; return true;
-        case 'CLEAR': Q.stage = 'menu'; return true;
-      }
-      return true;
-    }
+    if (Q.stage === 'pmode') return plyModeKey(Q, true, a);
     if (Q.stage === 'pcoef') {
       if (Q.ed) {
         switch (a) {
@@ -3860,6 +3870,7 @@ function simKey(a) {
   if (F !== undefined) {
     if (Q.stage === 'mat' && !simCommit(Q)) return true;
     if (F === 0) { Q.stage = 'menu'; Q.ed = null; return true; }
+    if (Q.stage === 'mode' && F === 1) { Q.page = 'simhelp'; return true; }
     if (F === 1) { Q.stage = 'mode'; Q.mr = 0; Q.mc = Q.neq - 2; Q.ed = null; return true; }
     if (Q.stage === 'mode') { if (F === 4) { Q.stage = 'mat'; Q.r = Math.min(Q.r, Q.neq - 1); Q.c = Math.min(Q.c, Q.nunk); } return true; }
     if (Q.stage === 'mat') {
@@ -3875,21 +3886,7 @@ function simKey(a) {
       return true;
     }
   }
-  if (Q.stage === 'mode') {
-    const lens = [9, 9, 3, 11, 2];
-    switch (a) {
-      case 'UP': Q.mr = (Q.mr + 4) % 5; Q.mc = [Q.neq - 2, Q.nunk - 2, S.mode.notation, S.mode.fix + 1, S.mode.angle][Q.mr]; return true;
-      case 'DOWN': Q.mr = (Q.mr + 1) % 5; Q.mc = [Q.neq - 2, Q.nunk - 2, S.mode.notation, S.mode.fix + 1, S.mode.angle][Q.mr]; return true;
-      case 'LEFT': Q.mc = (Q.mc + lens[Q.mr] - 1) % lens[Q.mr]; return true;
-      case 'RIGHT': Q.mc = (Q.mc + 1) % lens[Q.mr]; return true;
-      case 'ENTER':
-        if (Q.mr === 0) Q.neq = Q.mc + 2; else if (Q.mr === 1) Q.nunk = Q.mc + 2;
-        else if (Q.mr === 2) S.mode.notation = Q.mc; else if (Q.mr === 3) S.mode.fix = Q.mc - 1; else S.mode.angle = Q.mc;
-        return true;
-      case 'CLEAR': Q.stage = 'menu'; return true;
-    }
-    return true;
-  }
+  if (Q.stage === 'mode') return plyModeKey(Q, false, a);
   if (Q.stage === 'mat') {
     const nc = Q.nunk + 1;
     if (Q.ed) {
@@ -3995,11 +3992,6 @@ function appKey(a) {
   return true;
 }
 
-/* ---- no-device screens ---- */
-APPSX.stub = {
-  draw(A) { apTitle(A.name); A.msg.forEach((l, k) => apText(l, 8, SB + 44 + k * 20)); apBar(['QUIT', '', '', '', '']); },
-  key(A, a, F) { if (F === 0 || a === 'CLEAR' || a === 'ENTER') goHome(); },
-};
 
 /* ---- Periodic table ---- */
 const ELEMENTS = 'H,Hydrogen,1.008;He,Helium,4.003;Li,Lithium,6.94;Be,Beryllium,9.012;B,Boron,10.81;C,Carbon,12.011;N,Nitrogen,14.007;O,Oxygen,15.999;F,Fluorine,18.998;Ne,Neon,20.180;Na,Sodium,22.990;Mg,Magnesium,24.305;Al,Aluminium,26.982;Si,Silicon,28.085;P,Phosphorus,30.974;S,Sulfur,32.06;Cl,Chlorine,35.45;Ar,Argon,39.948;K,Potassium,39.098;Ca,Calcium,40.078;Sc,Scandium,44.956;Ti,Titanium,47.867;V,Vanadium,50.942;Cr,Chromium,51.996;Mn,Manganese,54.938;Fe,Iron,55.845;Co,Cobalt,58.933;Ni,Nickel,58.693;Cu,Copper,63.546;Zn,Zinc,65.38;Ga,Gallium,69.723;Ge,Germanium,72.630;As,Arsenic,74.922;Se,Selenium,78.971;Br,Bromine,79.904;Kr,Krypton,83.798;Rb,Rubidium,85.468;Sr,Strontium,87.62;Y,Yttrium,88.906;Zr,Zirconium,91.224;Nb,Niobium,92.906;Mo,Molybdenum,95.95;Tc,Technetium,98;Ru,Ruthenium,101.07;Rh,Rhodium,102.906;Pd,Palladium,106.42;Ag,Silver,107.868;Cd,Cadmium,112.414;In,Indium,114.818;Sn,Tin,118.710;Sb,Antimony,121.760;Te,Tellurium,127.60;I,Iodine,126.904;Xe,Xenon,131.293;Cs,Cesium,132.905;Ba,Barium,137.327;La,Lanthanum,138.905;Ce,Cerium,140.116;Pr,Praseodymium,140.908;Nd,Neodymium,144.242;Pm,Promethium,145;Sm,Samarium,150.36;Eu,Europium,151.964;Gd,Gadolinium,157.25;Tb,Terbium,158.925;Dy,Dysprosium,162.500;Ho,Holmium,164.930;Er,Erbium,167.259;Tm,Thulium,168.934;Yb,Ytterbium,173.045;Lu,Lutetium,174.967;Hf,Hafnium,178.49;Ta,Tantalum,180.948;W,Tungsten,183.84;Re,Rhenium,186.207;Os,Osmium,190.23;Ir,Iridium,192.217;Pt,Platinum,195.084;Au,Gold,196.967;Hg,Mercury,200.592;Tl,Thallium,204.38;Pb,Lead,207.2;Bi,Bismuth,208.980;Po,Polonium,209;At,Astatine,210;Rn,Radon,222;Fr,Francium,223;Ra,Radium,226;Ac,Actinium,227;Th,Thorium,232.038;Pa,Protactinium,231.036;U,Uranium,238.029;Np,Neptunium,237;Pu,Plutonium,244;Am,Americium,243;Cm,Curium,247;Bk,Berkelium,247;Cf,Californium,251;Es,Einsteinium,252;Fm,Fermium,257;Md,Mendelevium,258;No,Nobelium,259;Lr,Lawrencium,266;Rf,Rutherfordium,267;Db,Dubnium,268;Sg,Seaborgium,269;Bh,Bohrium,270;Hs,Hassium,277;Mt,Meitnerium,278;Ds,Darmstadtium,281;Rg,Roentgenium,282;Cn,Copernicium,285;Nh,Nihonium,286;Fl,Flerovium,289;Mc,Moscovium,290;Lv,Livermorium,293;Ts,Tennessine,294;Og,Oganesson,294'.split(';').map(x => x.split(','));
@@ -4009,6 +4001,18 @@ function elPos(z) {
   if (z <= 56) return [5, z - 55]; if (z <= 71) return [7, z - 55]; if (z <= 86) return [5, z - 69]; if (z <= 88) return [6, z - 87];
   if (z <= 103) return [8, z - 87]; return [6, z - 101];
 }
+const EL_EXC = { 24: '3d5 4s1', 29: '3d10 4s1', 41: '4d4 5s1', 42: '4d5 5s1', 44: '4d7 5s1', 45: '4d8 5s1', 46: '4d10', 47: '4d10 5s1', 57: '5d1 6s2', 58: '4f1 5d1 6s2', 64: '4f7 5d1 6s2', 78: '4f14 5d9 6s1', 79: '4f14 5d10 6s1', 89: '6d1 7s2', 90: '6d2 7s2', 91: '5f2 6d1 7s2', 92: '5f3 6d1 7s2', 93: '5f4 6d1 7s2', 96: '5f7 6d1 7s2', 103: '5f14 7s2 7p1' };
+function elConfig(z) {
+  const core = [[86, 'Rn'], [54, 'Xe'], [36, 'Kr'], [18, 'Ar'], [10, 'Ne'], [2, 'He']].find(c => c[0] < z);
+  const sup = t => t.replace(/([spdf])(\d+)/g, (_, l, n) => l + n.replace(/\d/g, d => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]));
+  if (EL_EXC[z]) return '[' + core[1] + ']' + sup(EL_EXC[z]).replace(/ /g, '');
+  const order = ['1s', '2s', '2p', '3s', '3p', '4s', '3d', '4p', '5s', '4d', '5p', '6s', '4f', '5d', '6p', '7s', '5f', '6d', '7p'], cap = { s: 2, p: 6, d: 10, f: 14 };
+  let left = z - (core ? core[0] : 0), skip = core ? core[0] : 0; const out = [];
+  for (const o of order) { const c = cap[o[1]]; if (skip >= c) { skip -= c; continue; } if (left <= 0) break; const n = Math.min(c, left); out.push([o, n]); left -= n; }
+  out.sort((p2, q) => p2[0][0] - q[0][0] || 'spdf'.indexOf(p2[0][1]) - 'spdf'.indexOf(q[0][1]));
+  return (core ? '[' + core[1] + ']' : '') + out.map(([o, n]) => sup(o + n)).join('');
+}
+const elState = z => [1, 2, 7, 8, 9, 10, 17, 18, 36, 54, 86].includes(z) ? 'Gas' : z === 35 || z === 80 ? 'Liquid' : z >= 104 ? 'Unknown' : 'Solid';
 function elCat(z) {
   if ([2, 10, 18, 36, 54, 86, 118].includes(z)) return ['Noble gas', '#e6d6f5'];
   if ([3, 11, 19, 37, 55, 87].includes(z)) return ['Alkali metal', '#f7c9c9'];
@@ -4027,7 +4031,7 @@ APPSX.periodic = {
     const e = ELEMENTS[A.z - 1], [cat] = elCat(A.z), [r0, c0] = elPos(A.z);
     if (A.detail) {
       apTitle(e[1].toUpperCase());
-      ['Symbol: ' + e[0], 'Atomic number: ' + A.z, 'Atomic weight: ' + e[2], 'Type: ' + cat, 'Period: ' + (r0 === 7 ? 6 : r0 === 8 ? 7 : r0 + 1), 'Group: ' + (r0 >= 7 ? '-' : c0 + 1)].forEach((l, k) => apText(l, 8, SB + 44 + k * 22));
+      ['Symbol: ' + e[0], 'Atomic number: ' + A.z, 'Atomic weight: ' + e[2], 'Type: ' + cat, 'Period: ' + (r0 === 7 ? 6 : r0 === 8 ? 7 : r0 + 1) + '   Group: ' + (r0 >= 7 ? '-' : c0 + 1), 'State (room temp): ' + elState(A.z), 'Config: ' + elConfig(A.z)].forEach((l, k) => apText(l, 8, SB + 42 + k * 21));
       apBar(['TABLE', '', '', '', 'EXPORT']); return;
     }
     apTitle('PERIODIC TABLE');
@@ -4099,7 +4103,7 @@ APPSX.probsim = {
 /* ---- Conics ---- */
 const CONICS = [
   { name: 'CIRCLE', forms: [{ eq: '(X-H)²+(Y-K)²=R²', p: ['H', 'K', 'R'] }] },
-  { name: 'ELLIPSE', forms: [{ eq: '(X-H)²/A²+(Y-K)²/B²=1', p: ['A', 'B', 'H', 'K'] }] },
+  { name: 'ELLIPSE', forms: [{ eq: '(X-H)²/A²+(Y-K)²/B²=1', p: ['A', 'B', 'H', 'K'] }, { eq: '(X-H)²/B²+(Y-K)²/A²=1', p: ['A', 'B', 'H', 'K'] }] },
   { name: 'HYPERBOLA', forms: [{ eq: '(X-H)²/A²-(Y-K)²/B²=1', p: ['A', 'B', 'H', 'K'] }, { eq: '(Y-K)²/A²-(X-H)²/B²=1', p: ['A', 'B', 'H', 'K'] }] },
   { name: 'PARABOLA', forms: [{ eq: '(Y-K)²=4P(X-H)', p: ['H', 'K', 'P'] }, { eq: '(X-H)²=4P(Y-K)', p: ['H', 'K', 'P'] }] },
 ];
@@ -4116,7 +4120,7 @@ APPSX.conics = {
   info(A) {
     const { H: h, K: k, R, A: a, B: b, P: p } = A.v, f = x => fmtNum(x, 6), pt = (x, y) => '(' + f(x) + ',' + f(y) + ')';
     if (A.type === 0) return ['Center ' + pt(h, k), 'Radius ' + f(R)];
-    if (A.type === 1) { const c = Math.sqrt(Math.abs(a * a - b * b)), hz = a >= b; return ['Center ' + pt(h, k), 'Vertices ' + (hz ? pt(h - a, k) + ' ' + pt(h + a, k) : pt(h, k - b) + ' ' + pt(h, k + b)), 'Foci ' + (hz ? pt(h - c, k) + ' ' + pt(h + c, k) : pt(h, k - c) + ' ' + pt(h, k + c)), 'Eccentricity ' + f(c / Math.max(a, b))]; }
+    if (A.type === 1) { const rx = A.form === 0 ? a : b, ry = A.form === 0 ? b : a, c = Math.sqrt(Math.abs(a * a - b * b)), hz = rx >= ry; return ['Center ' + pt(h, k), 'Vertices ' + (hz ? pt(h - rx, k) + ' ' + pt(h + rx, k) : pt(h, k - ry) + ' ' + pt(h, k + ry)), 'Foci ' + (hz ? pt(h - c, k) + ' ' + pt(h + c, k) : pt(h, k - c) + ' ' + pt(h, k + c)), 'Eccentricity ' + f(c / Math.max(a, b))]; }
     if (A.type === 2) { const c = Math.sqrt(a * a + b * b), hz = A.form === 0; return ['Center ' + pt(h, k), 'Vertices ' + (hz ? pt(h - a, k) + ' ' + pt(h + a, k) : pt(h, k - a) + ' ' + pt(h, k + a)), 'Foci ' + (hz ? pt(h - c, k) + ' ' + pt(h + c, k) : pt(h, k - c) + ' ' + pt(h, k + c)), 'Asymptote slope ±' + f(hz ? b / a : a / b)]; }
     const hz = A.form === 0; return ['Vertex ' + pt(h, k), 'Focus ' + (hz ? pt(h + p, k) : pt(h, k + p)), 'Directrix ' + (hz ? 'X=' + f(h - p) : 'Y=' + f(k - p))];
   },
@@ -4140,7 +4144,7 @@ APPSX.conics = {
     ctx.strokeStyle = '#1a5fd8'; ctx.lineWidth = 2;
     const path = pts => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(PX(x), PY(y)) : ctx.moveTo(PX(x), PY(y))); ctx.stroke(); };
     const N = 160;
-    if (A.type <= 1) { const rx = A.type === 0 ? R : a, ry = A.type === 0 ? R : b; path(Array.from({ length: N + 1 }, (_, i) => { const t = i / N * 2 * Math.PI; return [h + rx * Math.cos(t), k + ry * Math.sin(t)]; })); }
+    if (A.type <= 1) { const rx = A.type === 0 ? R : A.form === 0 ? a : b, ry = A.type === 0 ? R : A.form === 0 ? b : a; path(Array.from({ length: N + 1 }, (_, i) => { const t = i / N * 2 * Math.PI; return [h + rx * Math.cos(t), k + ry * Math.sin(t)]; })); }
     else if (A.type === 2) for (const sg of [-1, 1]) path(Array.from({ length: N + 1 }, (_, i) => { const u = -2.4 + 4.8 * i / N; return A.form === 0 ? [h + sg * a * Math.cosh(u), k + b * Math.sinh(u)] : [h + b * Math.sinh(u), k + sg * a * Math.cosh(u)]; }));
     else path(Array.from({ length: N + 1 }, (_, i) => { const q = -half * 2 + 4 * half * i / N; return A.form === 0 ? [h + q * q / (4 * p), k + q] : [h + q, k + q * q / (4 * p)]; }));
     ctx.fillStyle = '#d8232c'; ctx.fillRect(PX(h) - 2, PY(k) - 2, 4, 4);
@@ -4221,7 +4225,7 @@ function sigCalc(tokens) {
 APPSX.scitools = {
   init: () => ({ tool: -1, cat: 0, from: 0, to: 1, val: 1, row: 0, sig: null, vec: { m1: 3, a1: 0, m2: 4, a2: 90 }, csel: 0 }),
   atMain: A => A.tool < 0,
-  start(A) { appMenu(A, 'SCIENCE TOOLS', ['SIG-FIG CALCULATOR', 'UNIT CONVERTER', 'CONSTANTS', 'VECTOR CALCULATOR', 'DATA/GRAPHS WIZARD'], k => { if (k < 0) { goHome(); return; } if (k === 4) { openLedit(); toast('Enter data in the lists, then use STAT PLOT (2nd Y=)', 2600); return; } A.tool = k; A.row = 0; if (k === 0) appInput(A, 'CALC:', t => { A.sigIn = linearize(t).join(''); try { A.sig = sigCalc(linearize(t)); } catch (e) { A.sig = { text: 'ERR:' + (e.type || 'SYNTAX'), figs: 0 }; } }, { text: true }); }); },
+  start(A) { appMenu(A, 'SELECT A TOOL', ['SIG-FIG CALCULATOR', 'UNIT CONVERTER', 'DATA/GRAPHS WIZARD', 'VECTOR CALCULATOR'], k0 => { if (k0 < 0) { goHome(); return; } const k = [0, 1, 4, 3][k0]; if (k === 4) { openLedit(); toast('Enter data in the lists, then use STAT PLOT (2nd Y=)', 2600); return; } A.tool = k; A.row = 0; if (k === 0) appInput(A, 'CALC:', t => { A.sigIn = linearize(t).join(''); try { A.sig = sigCalc(linearize(t)); } catch (e) { A.sig = { text: 'ERR:' + (e.type || 'SYNTAX'), figs: 0 }; } }, { text: true }); }); },
   draw(A) {
     if (A.tool < 0) return;
     if (A.tool === 0) {
@@ -4239,13 +4243,13 @@ APPSX.scitools = {
       const r = convertUnit(cat, us[A.from], us[A.to], A.val);
       apText(fmtNum(A.val) + ' ' + us[A.from] + ' =', 8, SB + 148, { color: '#6b7380' });
       apText(fmtNum(r) + ' ' + us[A.to], 8, SB + 170, { font: '700 15px "DejaVu Sans Mono", Menlo, monospace' });
-      apBar(['MAIN', '', '', '', 'EXPORT']); return;
+      apBar(['MAIN', 'CONST', '', '', 'EXPORT']); return;
     }
     if (A.tool === 2) {
       apTitle('CONSTANTS');
       const vis = 8, off = Math.max(0, Math.min(A.csel - 3, SCONST.length - vis));
       SCONST.slice(off, off + vis).forEach(([n, v], i) => { const y = SB + 40 + i * 20, sel = off + i === A.csel; ctx.font = '11.5px "DejaVu Sans Mono", Menlo, monospace'; if (sel) { ctx.fillStyle = '#2b6cc4'; ctx.fillRect(0, y - 13, W, 18); } ctx.fillStyle = sel ? '#fff' : '#111'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(n, 6, y, 190); ctx.textAlign = 'right'; ctx.fillText(fmtNum(v, 8), W - 6, y); });
-      apBar(['MAIN', '', '', '', 'EXPORT']); return;
+      apBar(['MAIN', 'CONV', '', '', 'EXPORT']); return;
     }
     apTitle('VECTOR CALCULATOR');
     const V = A.vec, deg = S.mode.angle === 1, rad = x => deg ? x * Math.PI / 180 : x;
@@ -4266,11 +4270,12 @@ APPSX.scitools = {
       else if (d && A.row === 0) { A.cat = (A.cat + d + cats.length) % cats.length; A.from = 0; A.to = 1; }
       else if (d && A.row === 1) A.from = (A.from + d + us.length) % us.length;
       else if (d && A.row === 2) A.to = (A.to + d + us.length) % us.length;
+      else if (F === 1) { A.tool = 2; }
       else if (F === 4) { const r = convertUnit(cats[A.cat], us[A.from], us[A.to], A.val); goHome(); numTokens(r).forEach(insertTok); }
       else if (A.row === 3 && (a === 'ENTER' || a.startsWith('i:'))) { appInput(A, 'Value=', v => { A.val = v; }); if (a.startsWith('i:')) insertTok(a.slice(2)); }
       return;
     }
-    if (A.tool === 2) { if (a === 'UP') A.csel = Math.max(0, A.csel - 1); else if (a === 'DOWN') A.csel = Math.min(SCONST.length - 1, A.csel + 1); else if (F === 4 || a === 'ENTER') { const v = SCONST[A.csel][1]; goHome(); numTokens(v).forEach(insertTok); } return; }
+    if (A.tool === 2) { if (F === 1) { A.tool = 1; return; } if (a === 'UP') A.csel = Math.max(0, A.csel - 1); else if (a === 'DOWN') A.csel = Math.min(SCONST.length - 1, A.csel + 1); else if (F === 4 || a === 'ENTER') { const v = SCONST[A.csel][1]; goHome(); numTokens(v).forEach(insertTok); } return; }
     const keys = ['m1', 'a1', 'm2', 'a2'];
     if (a === 'UP') A.row = Math.max(0, A.row - 1); else if (a === 'DOWN') A.row = Math.min(3, A.row + 1);
     else if (a === 'ENTER' || a.startsWith('i:')) { const k = keys[A.row]; appInput(A, k + '=', v => { A.vec[k] = v; A.row = Math.min(3, A.row + 1); }); if (a.startsWith('i:')) insertTok(a.slice(2)); }
@@ -4304,7 +4309,7 @@ function cellValue(key, seen = new Set()) {
 APPSX.cells = {
   init: () => ({ r: 0, c: 0, roff: 0, coff: 0 }),
   draw(A) {
-    apTitle('CELSHEET');
+    apTitle('CELLSHEET');
     const rhW = 26, cw = (W - rhW) / 4, rh = 20, top = SB + 20, visR = 7;
     if (A.c < A.coff) A.coff = A.c; if (A.c >= A.coff + 4) A.coff = A.c - 3;
     if (A.r < A.roff) A.roff = A.r; if (A.r >= A.roff + visR) A.roff = A.r - visR + 1;
@@ -4332,7 +4337,25 @@ APPSX.cells = {
   key(A, a, F) {
     const key = cellName(A.r, A.c);
     const edit = start => appInput(A, key + '=', t => { if (t.length) S.cells[key] = t; else delete S.cells[key]; A.r = Math.min(98, A.r + 1); }, { text: true, start });
-    if (F === 4) { appMenu(A, 'CELSHEET MENU', ['Clear Sheet', 'Help', 'Quit CelSheet'], k => { if (k === 0) { S.cells = {}; A.r = A.c = 0; } else if (k === 1) toast('STO▸ starts a formula (=A1+B2, =sum(A1:A5)). ALPHA " starts text. DEL clears a cell.', 5000); else if (k === 2) goHome(); }); return; }
+    if (F === 4) {
+      appMenu(A, 'CELLSHEET MENU', ['File…', 'Edit…', 'Options…', 'Charts…', 'Help', 'Quit CellSheet'], k => {
+        if (k === 0) appMenu(A, 'FILE', ['New'], j => { if (j === 0) { S.cells = {}; A.r = A.c = 0; } });
+        else if (k === 1) appMenu(A, 'EDIT', ['Clear Sheet', 'Clear Cell'], j => { if (j === 0) { S.cells = {}; A.r = A.c = 0; } else if (j === 1) delete S.cells[cellName(A.r, A.c)]; });
+        else if (k === 2) appMenu(A, 'OPTIONS', ['Recalculate'], () => {});
+        else if (k === 3) appMenu(A, 'CHARTS', ['Scatter (X: col A, Y: col B)', 'Line (X: col A, Y: col B)', 'Bar (col A)'], j => {
+          if (j < 0) return;
+          const col = c => { const out = []; for (let r = 0; r < 99; r++) { const key = cellName(r, c); if (!S.cells[key]) break; try { const v = cellValue(key); if (typeof v !== 'number') break; out.push(v); } catch (e) { break; } } return out; };
+          const xs = col(0), ys = col(1);
+          if (!xs.length || (j < 2 && ys.length !== xs.length)) { toast(j < 2 ? 'Columns A and B need the same number of values' : 'Column A is empty', 2200); return; }
+          S.lists[0] = xs; if (j < 2) S.lists[1] = ys;
+          S.plots.forEach((pl, i) => { pl.on = i === 0; }); Object.assign(S.plots[0], { type: j === 0 ? 0 : j === 1 ? 1 : 2, x: 0, y: 1 });
+          zoomStat();
+        });
+        else if (k === 4) toast('STO▸ starts a formula (=A1+B2, =sum(A1:A5)). ALPHA " starts text. DEL clears a cell.', 5000);
+        else if (k === 5) goHome();
+      });
+      return;
+    }
     switch (a) {
       case 'UP': A.r = Math.max(0, A.r - 1); return;
       case 'DOWN': A.r = Math.min(98, A.r + 1); return;
@@ -4347,13 +4370,21 @@ APPSX.cells = {
 };
 
 /* ---- Cabri-style geometry sketchpad ---- */
-const GEO_NEED = { point: 1, segment: 2, line: 2, circle: 2, triangle: 3, quad: 4, midpoint: 2, pbis: 2, perp: 2, para: 2, length: 2, angle: 3, area: 1, slope: 1 };
-const GEO_NAME = { point: 'Point', segment: 'Segment', line: 'Line', circle: 'Circle', triangle: 'Triangle', quad: 'Quad.', midpoint: 'Midpoint', pbis: 'Perp. Bis.', perp: 'Perp.', para: 'Parallel', length: 'D. & Length', angle: 'Angle', area: 'Area', slope: 'Slope', drag: 'Drag' };
-function geoPt(O, i) { const o = O[i]; if (o.mid) { const a = geoPt(O, o.mid[0]), b = geoPt(O, o.mid[1]); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; } return [o.x, o.y]; }
+const geoFree = o => o.t === 'P' && !o.mid && !o.sym && !o.refl;
+const GEO_NEED = { point: 1, segment: 2, line: 2, circle: 2, triangle: 3, quad: 4, midpoint: 2, pbis: 2, perp: 2, para: 2, abis: 3, symmetry: 2, reflect: 2, length: 2, angle: 3, area: 1, slope: 1 };
+const GEO_NAME = { point: 'Point', segment: 'Segment', line: 'Line', circle: 'Circle', triangle: 'Triangle', quad: 'Quad.', midpoint: 'Midpoint', pbis: 'Perp. Bis.', perp: 'Perp.', para: 'Parallel', abis: 'Angle Bis.', symmetry: 'Symmetry', reflect: 'Reflection', pointer: 'Pointer', length: 'D. & Length', angle: 'Angle', area: 'Area', slope: 'Slope', drag: 'Drag' };
+function geoPt(O, i) {
+  const o = O[i];
+  if (o.sym) { const p = geoPt(O, o.sym[0]), c = geoPt(O, o.sym[1]); return [2 * c[0] - p[0], 2 * c[1] - p[1]]; }
+  if (o.refl) { const p = geoPt(O, o.refl[0]), [q, d] = geoLine(O, o.refl[1]), L2 = d[0] * d[0] + d[1] * d[1] || 1, t = ((p[0] - q[0]) * d[0] + (p[1] - q[1]) * d[1]) / L2, f = [q[0] + t * d[0], q[1] + t * d[1]]; return [2 * f[0] - p[0], 2 * f[1] - p[1]]; }
+  return geoPt0(O, i);
+}
+function geoPt0(O, i) { const o = O[i]; if (o.mid) { const a = geoPt(O, o.mid[0]), b = geoPt(O, o.mid[1]); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; } return [o.x, o.y]; }
 // a line-like object as a point and a direction
 function geoLine(O, i) {
   const o = O[i];
   if (o.a !== undefined) { const p = geoPt(O, o.a), q = geoPt(O, o.b); return [p, [q[0] - p[0], q[1] - p[1]]]; }
+  if (o.abis) { const p = geoPt(O, o.abis[0]), v = geoPt(O, o.abis[1]), q = geoPt(O, o.abis[2]), u = [p[0] - v[0], p[1] - v[1]], w = [q[0] - v[0], q[1] - v[1]], lu = Math.hypot(u[0], u[1]) || 1, lw = Math.hypot(w[0], w[1]) || 1; return [v, [u[0] / lu + w[0] / lw, u[1] / lu + w[1] / lw]]; }
   if (o.pbis) { const p = geoPt(O, o.pbis[0]), q = geoPt(O, o.pbis[1]); return [[(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], [-(q[1] - p[1]), q[0] - p[0]]]; }
   const [, d] = geoLine(O, o.ref), p = geoPt(O, o.pt);
   return [p, o.t === 'perp' ? [-d[1], d[0]] : d];
@@ -4364,7 +4395,7 @@ APPSX.cabri = {
   nearLine(A) {
     let best = -1, bd = 6;
     A.O.forEach((o, i) => {
-      if (!['S', 'L', 'perp', 'para', 'pbisL'].includes(o.t)) return;
+      if (!['S', 'L', 'perp', 'para', 'pbisL', 'abisL'].includes(o.t)) return;
       const [p, d] = geoLine(A.O, i), L = Math.hypot(d[0], d[1]) || 1;
       let dist = Math.abs((A.cx - p[0]) * d[1] - (A.cy - p[1]) * d[0]) / L;
       if (o.t === 'S') { const tt = ((A.cx - p[0]) * d[0] + (A.cy - p[1]) * d[1]) / (L * L); if (tt < 0 || tt > 1) dist = 99; }
@@ -4374,13 +4405,13 @@ APPSX.cabri = {
   },
   nearPoly(A) { let best = -1; A.O.forEach((o, i) => { if (o.t !== 'T') return; const ps = o.p.map(k => geoPt(A.O, k)); for (let k = 0; k < ps.length; k++) { const p = ps[k], q = ps[(k + 1) % ps.length], d = [q[0] - p[0], q[1] - p[1]], L = Math.hypot(d[0], d[1]) || 1, tt = ((A.cx - p[0]) * d[0] + (A.cy - p[1]) * d[1]) / (L * L); if (tt >= 0 && tt <= 1 && Math.abs((A.cx - p[0]) * d[1] - (A.cy - p[1]) * d[0]) / L < 6) best = i; } }); return best; },
   draw(A) {
-    const O = A.O, U = 20;
+    const O = A.O, U = 20, X0 = APPSX.cabri;
     ctx.save(); ctx.beginPath(); ctx.rect(0, SB, W, H - SB - 20); ctx.clip();
     ctx.lineWidth = 1.4; ctx.font = '11px system-ui, sans-serif'; ctx.textBaseline = 'alphabetic';
     O.forEach((o, i) => {
       ctx.strokeStyle = ctx.fillStyle = '#111';
       if (o.t === 'S') { const p = geoPt(O, o.a), q = geoPt(O, o.b); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
-      else if (['L', 'perp', 'para', 'pbisL'].includes(o.t)) { const [p, d] = geoLine(O, i), L = Math.hypot(d[0], d[1]) || 1, ux = d[0] / L * 600, uy = d[1] / L * 600; ctx.strokeStyle = o.t === 'L' ? '#111' : '#1a5fd8'; ctx.beginPath(); ctx.moveTo(p[0] - ux, p[1] - uy); ctx.lineTo(p[0] + ux, p[1] + uy); ctx.stroke(); }
+      else if (['L', 'perp', 'para', 'pbisL', 'abisL'].includes(o.t)) { const [p, d] = geoLine(O, i), L = Math.hypot(d[0], d[1]) || 1, ux = d[0] / L * 600, uy = d[1] / L * 600; ctx.strokeStyle = o.t === 'L' ? '#111' : '#1a5fd8'; ctx.beginPath(); ctx.moveTo(p[0] - ux, p[1] - uy); ctx.lineTo(p[0] + ux, p[1] + uy); ctx.stroke(); }
       else if (o.t === 'C') { const c = geoPt(O, o.a), q = geoPt(O, o.b); ctx.beginPath(); ctx.arc(c[0], c[1], Math.hypot(q[0] - c[0], q[1] - c[1]), 0, 2 * Math.PI); ctx.stroke(); }
       else if (o.t === 'T') { const ps = o.p.map(k => geoPt(O, k)); ctx.fillStyle = 'rgba(26,95,216,.10)'; ctx.beginPath(); ps.forEach((p, k) => k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill(); ctx.stroke(); }
       else if (o.t === 'M') {
@@ -4392,37 +4423,39 @@ APPSX.cabri = {
         ctx.fillStyle = '#b3141b'; ctx.textAlign = 'left'; ctx.fillText(txt, at[0], at[1]);
       }
     });
-    O.forEach((o, i) => { if (o.t !== 'P') return; const p = geoPt(O, i); ctx.fillStyle = A.pend.includes(i) || i === A.drag ? '#d8232c' : o.mid ? '#1a5fd8' : '#111'; ctx.fillRect(p[0] - 2, p[1] - 2, 4, 4); });
+    O.forEach((o, i) => { if (o.t !== 'P') return; const p = geoPt(O, i); ctx.fillStyle = A.pend.includes(i) || i === A.drag ? '#d8232c' : geoFree(o) ? '#111' : '#1a5fd8'; ctx.fillRect(p[0] - 2, p[1] - 2, 4, 4); });
     // pointer
     ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(A.cx - 6, A.cy + 0.5); ctx.lineTo(A.cx + 7, A.cy + 0.5); ctx.moveTo(A.cx + 0.5, A.cy - 6); ctx.lineTo(A.cx + 0.5, A.cy + 7); ctx.stroke();
     ctx.restore();
     ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(0, SB, W, 15);
     ctx.fillStyle = '#2b4f8a'; ctx.font = '700 11px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(GEO_NAME[A.tool] + (A.tool === 'drag' ? (A.drag >= 0 ? ': arrows move, ENTER drops' : ': ENTER on a point') : A.pend.length ? '  (' + A.pend.length + '/' + GEO_NEED[A.tool] + ')' : ''), 5, SB + 11);
-    apBar(['FILE', 'CREATE', 'CONSTR', 'MEAS', 'DRAG']);
+    ctx.fillText(A.drag >= 0 ? 'Dragging: arrows move, ALPHA drops' : GEO_NAME[A.tool] + (A.pend.length ? '  (' + A.pend.length + '/' + GEO_NEED[A.tool] + ')' : ''), 5, SB + 11);
+    if (A.drag < 0 && X0.nearPt(A) >= 0) { ctx.textAlign = 'right'; ctx.fillStyle = '#6b7380'; ctx.font = '10px system-ui, sans-serif'; ctx.fillText('ALPHA grabs this point', W - 5, SB + 11); }
+    apBar(['F1 File', 'F2 Creat', 'F3 Const', 'F4 Trans', 'F5 Appear']);
   },
   key(A, a, F) {
     const O = A.O, X = APPSX.cabri;
     const pick = (title, ids) => openMenu({ keepScreen: true, tabs: mkTabs([{ title, items: ids.map(id => ({ label: GEO_NAME[id], act: () => { S.screen = 'app'; A.tool = id; A.pend = []; A.drag = -1; } })) }]) });
     if (F === 0) { openMenu({ keepScreen: true, tabs: mkTabs([{ title: 'FILE', items: [{ label: 'New', act: () => { S.screen = 'app'; O.length = 0; A.pend = []; A.drag = -1; } }, { label: 'Undo', act: () => { S.screen = 'app'; O.pop(); A.pend = []; A.drag = -1; } }, { label: 'Quit', act: () => goHome() }] }]) }); return; }
-    if (F === 1) { pick('CREATE', ['point', 'line', 'segment', 'circle', 'triangle', 'quad']); return; }
-    if (F === 2) { pick('CONSTRUCT', ['perp', 'para', 'pbis', 'midpoint']); return; }
-    if (F === 3) { pick('MEASURE', ['length', 'angle', 'area', 'slope']); return; }
-    if (F === 4) { A.tool = 'drag'; A.pend = []; A.drag = -1; return; }
+    if (F === 1) { pick('CREATION', ['point', 'line', 'segment', 'circle', 'triangle', 'quad']); return; }
+    if (F === 2) { pick('CONSTRUCTION', ['perp', 'para', 'pbis', 'abis', 'midpoint']); return; }
+    if (F === 3) { pick('TRANSFORMATION', ['symmetry', 'reflect']); return; }
+    if (F === 4) { pick('APPEARANCE: MEASURE', ['length', 'area', 'angle', 'slope']); return; }
     const step = S.second ? 10 : 3, mv = { UP: [0, -step], DOWN: [0, step], LEFT: [-step, 0], RIGHT: [step, 0] }[a];
     if (mv) {
       A.cx = Math.max(2, Math.min(W - 3, A.cx + mv[0])); A.cy = Math.max(SB + 16, Math.min(H - 24, A.cy + mv[1]));
-      if (A.drag >= 0 && !O[A.drag].mid) { O[A.drag].x = A.cx; O[A.drag].y = A.cy; }
+      if (A.drag >= 0 && geoFree(O[A.drag])) { O[A.drag].x = A.cx; O[A.drag].y = A.cy; }
       return;
     }
     if (a === 'CLEAR') { if (A.pend.length || A.drag >= 0) { A.pend = []; A.drag = -1; } else goHome(); return; }
     if (a === 'DEL') { O.pop(); A.pend = []; A.drag = -1; return; }
     if (a !== 'ENTER') return;
-    if (A.tool === 'drag') { if (A.drag >= 0) { A.drag = -1; return; } const i = X.nearPt(A); if (i >= 0 && !O[i].mid) { A.drag = i; A.cx = Math.round(O[i].x); A.cy = Math.round(O[i].y); } return; }
+    if (A.drag >= 0) { A.drag = -1; return; }
+    if (A.tool === 'pointer') return;
     const getPt = () => { let i = X.nearPt(A); if (i < 0) { O.push({ t: 'P', x: A.cx, y: A.cy }); i = O.length - 1; } return i; };
     const t = A.tool;
     if (t === 'area' || t === 'slope') { const i = t === 'area' ? X.nearPoly(A) : X.nearLine(A); if (i < 0) { toast(t === 'area' ? 'Point at a triangle or quadrilateral side' : 'Point at a line or segment', 1600); return; } O.push({ t: 'M', kind: t, r: [i] }); return; }
-    if ((t === 'perp' || t === 'para') && !A.pend.length) { const i = X.nearLine(A); if (i < 0) { toast('First point at a line or segment', 1600); return; } A.pend = [i]; return; }
+    if ((t === 'perp' || t === 'para' || t === 'reflect') && !A.pend.length) { const i = X.nearLine(A); if (i < 0) { toast('First point at a line or segment', 1600); return; } A.pend = [i]; return; }
     A.pend.push(getPt());
     if (A.pend.length < GEO_NEED[t]) return;
     const p = A.pend; A.pend = [];
@@ -4433,6 +4466,9 @@ APPSX.cabri = {
     else if (t === 'midpoint') O.push({ t: 'P', mid: [p[0], p[1]] });
     else if (t === 'pbis') O.push({ t: 'pbisL', pbis: [p[0], p[1]] });
     else if (t === 'perp' || t === 'para') O.push({ t, ref: p[0], pt: p[1] });
+    else if (t === 'abis') O.push({ t: 'abisL', abis: p });
+    else if (t === 'symmetry') O.push({ t: 'P', sym: [p[0], p[1]] });
+    else if (t === 'reflect') O.push({ t: 'P', refl: [p[1], p[0]] });
     else if (t === 'length') O.push({ t: 'M', kind: 'length', r: p });
     else if (t === 'angle') O.push({ t: 'M', kind: 'angle', r: p });
   },
@@ -4443,7 +4479,7 @@ APPSX.cabri = {
    ================================================================= */
 function stopProgram() { if (S.run && S.run.active) { S.run.active = false; if (S.prun) { S.prun.input = null; S.prun.pause = null; S.prun.menu = null; } } }
 function goHome() { closeGraphState(); if (S.prun && S.prun.menu) stopProgram(); S.screen = 'home'; }
-function closeGraphState() { const g = S.g; g.pen = null; g.mode = 'none'; g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; }
+function closeGraphState() { const g = S.g; g.pen = null; g.poi = null; g.mode = 'none'; g.calc = null; g.prompt = null; g.result = null; g.zoom = null; g.marks = []; g.info = null; }
 function showError(type, gotoFn) { S.err = { type, sel: 0, gotoFn, canGoto: !!gotoFn }; S.screen = 'error'; }
 
 function setMathPrint(on) {
@@ -4483,15 +4519,16 @@ function openForm(kind) {
       title: 'WINDOW', obj: S.win, kind,
       fields: [
         ...[[], [['Tmin', 'tmin'], ['Tmax', 'tmax'], ['Tstep', 'tstep']], [['θmin', 'thmin'], ['θmax', 'thmax'], ['θstep', 'thstep']], [['nMin', 'nmin'], ['nMax', 'nmax'], ['PlotStart', 'pstart'], ['PlotStep', 'pstep']]][GM()],
-        ['Xmin', 'xmin'], ['Xmax', 'xmax'], ['Xscl', 'xscl'], ['Ymin', 'ymin'], ['Ymax', 'ymax'], ['Yscl', 'yscl'], ...(GM() === 0 ? [['Xres', 'xres']] : [])],
-      extra: () => GM() === 0 ? ['ΔX=' + fmtNum(dX()), 'TraceStep=' + fmtNum(dX() * 2)] : [], sel: 0,
+        ['Xmin', 'xmin'], ['Xmax', 'xmax'], ['Xscl', 'xscl'], ['Ymin', 'ymin'], ['Ymax', 'ymax'], ['Yscl', 'yscl'], ...(GM() === 0 ? [['Xres', 'xres']] : []),
+        ...(S.transOn && GM() === 0 ? [['A', 'A', S.vars], ['B', 'B', S.vars], ['C', 'C', S.vars], ['D', 'D', S.vars], ['Step', 'transStep', S]] : [])],
+      extra: () => GM() === 0 && !S.transOn ? ['ΔX=' + fmtNum(dX()), 'TraceStep=' + fmtNum(dX() * 2)] : [], sel: 0,
     };
   } else {
     S.form = { title: 'TABLE SETUP', obj: S.tbl, kind, fields: [['TblStart', 'start'], ['ΔTbl', 'step']], extra: () => ['Indpnt: Auto', 'Depend: Auto'], sel: 0 };
   }
   loadField(); S.screen = 'form';
 }
-function loadField() { const f = S.form, fd = f.fields[f.sel]; f.ed = new Ed([...fmtNum(f.obj[fd[1]])]); f.ed.c = 0; f.ed.fresh = true; f.ed.dirty = false; }
+function loadField() { const f = S.form, fd = f.fields[f.sel]; f.ed = new Ed([...fmtNum(num((fd[2] || f.obj)[fd[1]] || 0))]); f.ed.c = 0; f.ed.fresh = true; f.ed.dirty = false; }
 function commitField() {
   const f = S.form, fd = f.fields[f.sel];
   if (!f.ed.dirty) return true;
@@ -4502,7 +4539,8 @@ function commitField() {
     if (fd[1] === 'step' && v === 0) err('DOMAIN');
     if (['tstep', 'thstep', 'pstep'].includes(fd[1]) && !(v > 0)) err('DOMAIN');
     if (['nmin', 'nmax', 'pstart'].includes(fd[1]) && (!isInt(v) || v < 0)) err('DOMAIN');
-    f.obj[fd[1]] = v; S.graphDirty = true; f.ed.dirty = false;
+    if (fd[1] === 'transStep' && v === 0) err('DOMAIN');
+    (fd[2] || f.obj)[fd[1]] = fd[1] === 'transStep' ? Math.abs(v) : v; S.graphDirty = true; f.ed.dirty = false;
     return true;
   } catch (e) {
     if (!(e instanceof CalcError)) throw e;
@@ -4614,6 +4652,29 @@ function zoom(type) {
     }
   }
   openGraph();
+}
+const ineqActive = () => S.ineqOn && GM() === 0 && activeFns().some(i => relOf(i));
+function startPoI() {
+  const fs = activeFns(), pts = [], w = S.win;
+  for (let a = 0; a < fs.length; a++) for (let b = a + 1; b < fs.length; b++) {
+    const h = t => evalY(fs[a], t) - evalY(fs[b], t), N = 400;
+    let px = w.xmin, pv = h(px);
+    for (let k = 1; k <= N; k++) {
+      const x = w.xmin + (w.xmax - w.xmin) * k / N, v = h(x);
+      if (Number.isFinite(pv) && Number.isFinite(v) && (pv === 0 || Math.sign(pv) !== Math.sign(v))) {
+        let lo = px, hi = x, flo = pv;
+        for (let it = 0; it < 80; it++) { const m = (lo + hi) / 2, fm = h(m); if (Math.sign(fm) === Math.sign(flo)) { lo = m; flo = fm; } else hi = m; }
+        const r = (lo + hi) / 2, y = evalY(fs[a], r);
+        const z0 = v2 => Math.abs(v2) < 1e-9 * Math.max(1, Math.abs(r), Math.abs(y)) ? 0 : Number(v2.toPrecision(12));
+        if (Number.isFinite(y) && Math.abs(h(r)) < 1e-6 * Math.max(1, Math.abs(y))) pts.push({ x: z0(r), y: z0(y), a: fs[a], b: fs[b] });
+      }
+      px = x; pv = v;
+    }
+  }
+  if (!pts.length) { toast('No points of intersection in this window', 2000); return; }
+  pts.sort((p, q) => p.x - q.x);
+  const tol = 1e-6 * (w.xmax - w.xmin), uniq = pts.filter((q, k) => !pts.slice(0, k).some(o => o.a === q.a && o.b === q.b && Math.abs(o.x - q.x) < tol));
+  S.g.mode = 'poi'; S.g.poi = { pts: uniq, k: 0 };
 }
 function transCoefs() {
   const fs = activeFns();
@@ -4826,14 +4887,25 @@ const MENUS = {
     { label: 'CabriJr', act: () => openApp('cabri') },
     { label: 'CelSheet', act: () => openApp('cells') },
     { label: 'Conics', act: () => openApp('conics') },
-    { label: 'EasyData', act: () => openApp('stub', { name: 'EASYDATA', msg: ['No interface connected.', '', 'This app reads Vernier sensors', 'plugged into the calculator.', 'A web page has no sensor port,', 'so there is no data to collect.'] }) },
-    { label: 'Hub', act: () => openApp('stub', { name: 'HUB', msg: ['TI-Innovator Hub not connected.', '', 'This app sends commands to a', 'Hub over the USB port. There', 'is no Hub attached to a web', 'page, so nothing can be sent.'] }) },
-    { label: 'Inequalz' + (S.ineqOn ? ' ✓' : ''), act: () => { S.ineqOn = !S.ineqOn; S.graphDirty = true; openYeq(); toast('Inequality Graphing ' + (S.ineqOn ? 'ON: put the cursor on = and press ALPHA + F1–F5 to pick = < ≤ > ≥' : 'OFF'), S.ineqOn ? 4500 : 1500); } },
+    { label: 'Inequalz', act: () => {
+      if (!S.ineqOn) { S.ineqOn = true; S.graphDirty = true; openYeq(); toast('INEQUALITY GRAPHING: put the cursor on = and press ALPHA + F1–F5 for = < ≤ > ≥', 4500); return; }
+      openMenu({ home: true, tabs: mkTabs([{ title: 'INEQUAL RUNNING', items: [
+        { label: 'Continue', act: () => openYeq() },
+        { label: 'Quit Inequal', act: () => { S.ineqOn = false; S.ineqMode = 0; S.graphDirty = true; goHome(); } },
+        { label: 'About', act: () => { goHome(); toast('Inequality Graphing (web version)', 2200); } },
+      ] }]) });
+    } },
     { label: 'Periodic', act: () => openApp('periodic') },
     { label: 'PlySmlt2', act: openPlySmlt },
     { label: 'Prob Sim', act: () => openApp('probsim') },
     { label: 'SciTools', act: () => openApp('scitools') },
-    { label: 'Transfrm' + (S.transOn ? ' ✓' : ''), act: () => { S.transOn = !S.transOn; goHome(); toast('Transformation Graphing ' + (S.transOn ? 'ON: use A, B, C, D in Y1, then GRAPH and change them with the arrows' : 'OFF'), S.transOn ? 4500 : 1500); } },
+    { label: 'Transfrm', act: () => {
+      if (!S.transOn) { S.transOn = true; S.graphDirty = true; goHome(); toast('TRANSFORMATION GRAPHING: use A, B, C, D in Y=, press GRAPH, then ◂ ▸ change the value. Step is in WINDOW.', 5000); return; }
+      openMenu({ home: true, tabs: mkTabs([{ title: 'TRANSFRM APP', items: [
+        { label: 'Uninstall', act: () => { S.transOn = false; S.graphDirty = true; goHome(); } },
+        { label: 'Continue', act: () => goHome() },
+      ] }]) });
+    } },
   ] }]) }),
   FINANCE: () => ({ tabs: mkTabs([{ title: 'CALC', items: [
     { label: 'TVM Solver…', act: openTVM }, T('tvm_Pmt'), T('tvm_I%'), T('tvm_PV'), T('tvm_N'), T('tvm_FV'), T('npv('), T('irr('), T('bal('), T('ΣPrn('), T('ΣInt('), T('►Nom('), T('►Eff('), T('dbd('),
@@ -5116,13 +5188,20 @@ const HANDLERS = {
       return false;
     }
     const arrows = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+    if (g.mode === 'poi') {
+      const n = g.poi.pts.length;
+      if (a === 'LEFT' || a === 'UP') { g.poi.k = (g.poi.k + n - 1) % n; return true; }
+      if (a === 'RIGHT' || a === 'DOWN' || a === 'ENTER') { g.poi.k = (g.poi.k + 1) % n; return true; }
+      if (a === 'CLEAR' || a === 'BS') { g.mode = 'none'; g.poi = null; return true; }
+      g.mode = 'none'; g.poi = null;
+    }
     if (transActive()) {
-      const cf = transCoefs(), n = cf.length + 1, cur = S.transSel < cf.length ? cf[S.transSel] : 'Step';
+      const cf = transCoefs(), n = cf.length, cur = cf[Math.min(S.transSel, n - 1)];
       if (a === 'UP') { S.transSel = (S.transSel + n - 1) % n; return true; }
       if (a === 'DOWN') { S.transSel = (S.transSel + 1) % n; return true; }
       if (a === 'LEFT' || a === 'RIGHT') {
         const d = a === 'LEFT' ? -1 : 1;
-        if (cur === 'Step') S.transStep = d > 0 ? S.transStep * 2 : S.transStep / 2; else S.vars[cur] = r14(num(S.vars[cur] || 0) + d * S.transStep);
+        S.vars[cur] = r14(num(S.vars[cur] || 0) + d * S.transStep);
         S.graphDirty = true; return true;
       }
       if (a.startsWith('i:') && /^[0-9.⁻π]$/.test(a.slice(2))) { openPrompt(); g.prompt.label = cur + '='; g.prompt.trans = cur; return false; }
@@ -5481,7 +5560,9 @@ function doAction(a) {
     case 'RCL': if (editorFor(S.screen)) { S.rcl = true; toast('Rcl: press a variable, list, matrix or Y= name', 2500); } return;
     case 'F1': if (S.ineqOn && S.screen === 'graph') { openMenu({ keepScreen: true, tabs: mkTabs([{ title: 'SHADES', items: [{ label: 'Ineq Intersection', act: () => { S.ineqMode = 1; S.graphDirty = true; S.screen = 'graph'; } }, { label: 'Union (shade all)', act: () => { S.ineqMode = 0; S.graphDirty = true; S.screen = 'graph'; } }] }]) }); return; }
       openMenu(MENUS[a]()); return;
-    case 'F2': case 'F3': case 'F4': openMenu(MENUS[a]()); return;
+    case 'F2': if (S.ineqOn && S.screen === 'graph') { startPoI(); return; } openMenu(MENUS[a]()); return;
+    case 'F3': if (S.ineqOn && S.screen === 'graph') { toast('Shades: choose intersection or union. PoI-Trace: step through the points where the boundaries cross.', 4500); return; } openMenu(MENUS[a]()); return;
+    case 'F4': openMenu(MENUS[a]()); return;
     case 'F5': doAction('GRAPH'); return;
     case 'ON': goHome(); return;
     case 'OFF': S.off = true; S.second = S.alpha = S.alphaLock = false; return;
@@ -5552,6 +5633,12 @@ function press(id) {
   S.seqGen++; setArea();
   if (S.off) { if (id === 'on') { S.off = false; redraw(); } return; }
   if (S.run && S.run.active && id !== 'on' && !S.prun.input && !S.prun.pause && !S.prun.menu) { S.run.lastKey = KEYCODE[id] || 0; return; }
+  if (id === 'alpha' && S.screen === 'app' && S.app && S.app.id === 'cabri' && !S.app.menu && !S.second) {
+    const A = S.app;
+    if (A.drag >= 0) A.drag = -1;
+    else { const i = APPSX.cabri.nearPt(A); if (i >= 0 && geoFree(A.O[i])) { A.drag = i; A.pend = []; A.cx = Math.round(A.O[i].x); A.cy = Math.round(A.O[i].y); } else toast('Move the pointer onto a free point, then press ALPHA', 1800); }
+    save(); redraw(); return;
+  }
   if (id === 'second') { S.second = !S.second; S.blink = true; redraw(); return; }
   if (id === 'alpha') {
     if (S.second) { S.second = false; S.alpha = true; S.alphaLock = true; }
