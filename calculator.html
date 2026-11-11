@@ -4822,11 +4822,11 @@ const MENUS = {
   F3: () => ({ tabs: mkTabs([{ title: 'MTRX', items: [[2, 2], [2, 3], [3, 3], [3, 4]].map(([r, c]) => ({ label: r + '×' + c, act: () => { S.screen = S.menu.ret; const tk = ['[']; for (let i = 0; i < r; i++) { tk.push('['); for (let j = 0; j < c; j++) { if (j) tk.push(','); tk.push('0'); } tk.push(']'); } tk.push(']'); tk.forEach(insertTok); } })).concat('ABCDEFGHIJ'.split('').map(k => T('[' + k + ']'))) }]) }),
   F4: () => ({ tabs: mkTabs([{ title: 'YVAR', items: YLAB.map(d => T('Y' + d)) }]) }),
   APPS: () => ({ home: true, tabs: mkTabs([{ title: 'APPLICATIONS', items: [
+    { label: 'Finance…', act: () => openMenu(MENUS.FINANCE()) },
     { label: 'CabriJr', act: () => openApp('cabri') },
     { label: 'CelSheet', act: () => openApp('cells') },
     { label: 'Conics', act: () => openApp('conics') },
     { label: 'EasyData', act: () => openApp('stub', { name: 'EASYDATA', msg: ['No interface connected.', '', 'This app reads Vernier sensors', 'plugged into the calculator.', 'A web page has no sensor port,', 'so there is no data to collect.'] }) },
-    { label: 'Finance', act: () => openMenu(MENUS.FINANCE()) },
     { label: 'Hub', act: () => openApp('stub', { name: 'HUB', msg: ['TI-Innovator Hub not connected.', '', 'This app sends commands to a', 'Hub over the USB port. There', 'is no Hub attached to a web', 'page, so nothing can be sent.'] }) },
     { label: 'Inequalz' + (S.ineqOn ? ' ✓' : ''), act: () => { S.ineqOn = !S.ineqOn; S.graphDirty = true; openYeq(); toast('Inequality Graphing ' + (S.ineqOn ? 'ON: put the cursor on = and press ALPHA + F1–F5 to pick = < ≤ > ≥' : 'OFF'), S.ineqOn ? 4500 : 1500); } },
     { label: 'Periodic', act: () => openApp('periodic') },
