@@ -21,33 +21,33 @@ export function InverseGraph() {
         role="img"
         aria-label="Graphs of y equals e to the x and y equals ln x, which are reflections of each other in the line y equals x"
       >
-        <line x1={0} y1={sy(0)} x2={size} y2={sy(0)} stroke="#3a4558" strokeWidth="1" />
-        <line x1={sx(0)} y1={0} x2={sx(0)} y2={size} stroke="#3a4558" strokeWidth="1" />
+        <line x1={0} y1={sy(0)} x2={size} y2={sy(0)} stroke="#4a4a4a" strokeWidth="1" />
+        <line x1={sx(0)} y1={0} x2={sx(0)} y2={size} stroke="#4a4a4a" strokeWidth="1" />
         <line
           x1={sx(min)}
           y1={sy(min)}
           x2={sx(max)}
           y2={sy(max)}
-          stroke="#8b98ad"
+          stroke="#8a8a8a"
           strokeWidth="1"
-          strokeDasharray="5 5"
+          strokeDasharray="2 5"
         />
-        <path d={path(exp)} fill="none" stroke="#22d3ee" strokeWidth="2.25" />
-        <path d={path(ln)} fill="none" stroke="#a78bfa" strokeWidth="2.25" />
+        <path d={path(exp)} fill="none" stroke="#ffffff" strokeWidth="2.25" />
+        <path d={path(ln)} fill="none" stroke="#b5b5b5" strokeWidth="2.25" strokeDasharray="9 4" />
         <g fontSize="12" fontFamily="var(--font-geist-mono)">
-          <text x={sx(1.5)} y={sy(3.6)} fill="#22d3ee">
+          <text x={sx(1.5)} y={sy(3.6)} fill="#ffffff">
             y = eˣ
           </text>
-          <text x={sx(3.9)} y={sy(0.75)} fill="#a78bfa" textAnchor="end">
+          <text x={sx(3.9)} y={sy(0.75)} fill="#b5b5b5" textAnchor="end">
             y = ln x
           </text>
-          <text x={sx(-1.9)} y={sy(-2.3)} fill="#8b98ad">
+          <text x={sx(-1.9)} y={sy(-2.3)} fill="#8a8a8a">
             y = x
           </text>
-          <text x={size - 10} y={sy(0) + 14} fill="#8b98ad">
+          <text x={size - 10} y={sy(0) + 14} fill="#8a8a8a">
             x
           </text>
-          <text x={sx(0) - 14} y={12} fill="#8b98ad">
+          <text x={sx(0) - 14} y={12} fill="#8a8a8a">
             y
           </text>
         </g>

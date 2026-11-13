@@ -9,7 +9,7 @@ export default function Home() {
         <p className="label-mono">A-Level · H2 Mathematics · 9758</p>
         <h1 className="mt-4 max-w-2xl text-4xl font-bold tracking-tight sm:text-6xl">
           Revise H2 Math,{" "}
-          <span className="bg-gradient-to-r from-accent to-accent-2 bg-clip-text text-transparent">
+          <span className="text-mute">
             one topic at a time.
           </span>
         </h1>
@@ -28,9 +28,9 @@ export default function Home() {
 
         <div className="card mt-12 max-w-xl p-5 font-mono text-sm">
           <div className="mb-3 flex gap-1.5" aria-hidden>
-            <span className="size-2.5 rounded-full bg-bad/70" />
-            <span className="size-2.5 rounded-full bg-amber-400/70" />
-            <span className="size-2.5 rounded-full bg-good/70" />
+            <span className="size-2.5 rounded-full bg-white/25" />
+            <span className="size-2.5 rounded-full bg-white/50" />
+            <span className="size-2.5 rounded-full bg-white/90" />
           </div>
           <p className="text-mute">{"// composite functions"}</p>
           <p className="mt-2 font-sans text-base">
@@ -66,11 +66,11 @@ export default function Home() {
                     <li key={t.slug}>
                       <Link
                         href={`/topics/${t.slug}`}
-                        className="card group block h-full p-4 transition hover:border-accent hover:shadow-[0_0_24px_rgb(34_211_238/0.15)]"
+                        className="card group block h-full p-4 transition hover:border-accent hover:shadow-[0_0_24px_rgb(255_255_255/0.12)]"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold group-hover:text-accent">{t.title}</span>
-                          <span className="rounded-full bg-good/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-good">
+                          <span className="rounded-full bg-white px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-black">
                             Ready
                           </span>
                         </div>

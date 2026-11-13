@@ -74,7 +74,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       </p>
 
       {!isSupabaseConfigured && (
-        <p className="mt-6 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-200">
+        <p className="mt-6 rounded-lg border border-line bg-panel-2 p-3 text-sm text-ink">
           Login is not connected yet. Add the Supabase keys to <code>.env.local</code> (see the
           README) to enable accounts.
         </p>

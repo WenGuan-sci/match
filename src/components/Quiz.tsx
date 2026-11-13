@@ -169,7 +169,7 @@ export function Quiz({ topic, questions }: { topic: string; questions: Question[
             const isAnswer = q.answer === i;
             let style = "border-line hover:border-accent/60";
             if (checked && isAnswer) style = "border-good bg-good/10";
-            else if (checked && isPicked) style = "border-bad bg-bad/10";
+            else if (checked && isPicked) style = "border-dashed border-bad text-mute";
             else if (!checked && isPicked) style = "border-accent bg-accent/10";
             return (
               <button
